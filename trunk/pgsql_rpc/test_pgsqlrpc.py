@@ -13,8 +13,8 @@ import pgrpc
 cmdmapping={}
 
 if __name__=='__main__':
-    pgpro.start_console(cmdmapping)
+    pgpro.start_console(cmdmapping,port=5440)
 elif __name__=='__builtin__':
-    pgpro.start_daemon(cmdmapping)
+    pgpro.start_daemon(cmdmapping,port=5440)
 else:
     raise ValueError,'Unknown start style.'
