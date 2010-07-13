@@ -4,6 +4,14 @@
 # Date: 2010-07-12
 # Author: gashero
 
+import os
+import sys
+
+import pgpro
+import pgrpc
+
+cmdmapping={}
+
 if __name__=='__main__':
     pgpro.start_console(cmdmapping)
 elif __name__=='__builtin__':
