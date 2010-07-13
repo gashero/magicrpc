@@ -22,18 +22,23 @@ from twisted.python import log
 from twisted.application import service,internet
 from twisted.internet import threads
 
-ProSts_WaitStartup=1
-ProSts_WaitAuth=2
+ProSts_AskSSL=1
+ProSts_WaitStartup=2
+ProSts_WaitAuthClearText=3
+ProSts_WaitQuery=4
+
+INT32=lambda i:struct.pack('!l',i)
 
 class PGProtocol(protocol.Protocol):
     """PostgreSQL protocol"""
 
     _buffer=''
     _authed=False
-    _status=ProSts_WaitStartup
+    _status=ProSts_AskSSL
 
     def connectionMade(self):
         print 'ConnectionMade()'
+        #self.transport.write('N')
         return
 
     def connectionLost(self,reason):
@@ -44,22 +49,54 @@ class PGProtocol(protocol.Protocol):
         self._buffer+=data
         print 'DataReceived()=%s'%repr(data)
         if len(self._buffer)>=5:
-            if self._status==ProSts_WaitStartup:
+            if self._status==ProSts_AskSSL:
                 pktlen=struct.unpack('!L',self._buffer[:4])[0]
                 if len(self._buffer)>=pktlen:
                     pktbuf=self._buffer[4:pktlen]
                     self._buffer=self._buffer[pktlen:]
-                    print 'StartUp[%d]: %s'%(len(pktbuf),repr(pktbuf))
+                    if pktbuf[:4]=='\x00\x03\x00\x00':
+                        self._status=ProSts_WaitAuthClearText
+                        self.sendPacket('R',INT32(3))        #要求clear-text密码
+                    elif pktbuf[:4]=='\x04\xd2\x16\x2f':
+                        self.transport.write('N')
+                        self._status=ProSts_WaitStartup
+            elif self._status==ProSts_WaitStartup:
+                pktlen=struct.unpack('!L',self._buffer[:4])[0]
+                if len(self._buffer)>=pktlen:
+                    pktbuf=self._buffer[4:pktlen]
+                    self._buffer=self._buffer[pktlen:]
+                    print 'StartUp[%d]: %s'%(len(pktbuf),repr(pktbuf))  #8.3发来的是\x04\xd2\x16\x2f
+                    #TODO:startup包还没解析
+                    self._status=ProSts_WaitAuthClearText
                     #self.sendPacket('R',struct.pack('!l',5)+'aaaa') #要求MD5认证
-                    self.sendPacket('R',struct.pack('!l',3))        #要求clear-text密码
-                    self._status=ProSts_WaitAuth
-            elif self._status==ProSts_WaitAuth:
+                    self.sendPacket('R',INT32(3))        #要求clear-text密码
+            elif self._status==ProSts_WaitAuthClearText:
                 pkttype=self._buffer[0]
                 pktlen=struct.unpack('!L',self._buffer[1:5])[0]
+                #print 'WaitAuth[%s][%d]'%(repr(pkttype),pktlen)
+                if len(self._buffer)>=pktlen+1:
+                    pktbuf=self._buffer[5:pktlen+1]
+                    self._buffer=self._buffer[pktlen+1:]
+                    password=pktbuf[:-1]
+                    print 'Auth[%d]: %s, password=%s'%(len(pktbuf),repr(pktbuf),password)
+                    assert pkttype=='p','PasswordMessage must have pkttype [%s]!=[p]'%repr(pkttype)
+                    assert pktbuf[-1]=='\x00'
+                    #self.sendPacket('R',INT32(0))
+                    #self.sendPacket('Z',INT32(5)+'I')
+                    self._status=ProSts_WaitQuery
+                    self.transport.write('R\x00\x00\x00\x08\x00\x00\x00\x00S\x00\x00\x00\x19client_encoding\x00UTF8\x00S\x00\x00\x00\x17DateStyle\x00ISO, YMD\x00S\x00\x00\x00\x19integer_datetimes\x00on\x00S\x00\x00\x00\x14is_superuser\x00on\x00S\x00\x00\x00\x19server_encoding\x00UTF8\x00S\x00\x00\x00\x1aserver_version\x008.3.11\x00S\x00\x00\x00#session_authorization\x00postgres\x00S\x00\x00\x00$standard_conforming_strings\x00off\x00S\x00\x00\x00\x11TimeZone\x00PRC\x00K\x00\x00\x00\x0c\x00\x00&\xefY3>\xc1Z\x00\x00\x00\x05I')
+            else:
+                pkttype=self._buffer[0]
+                pktlen=struct.unpack('!L',self._buffer[1:5])[0]
+                if len(self._buffer)>=pktlen+1:
+                    pktbuf=self._buffer[5:pktlen+1]
+                    self._buffer=self._buffer[pktlen+1:]
+                    print 'Unknown[%s][%d]: %s'%(repr(pkttype),len(pktbuf),repr(pktbuf))
         return
 
     def sendPacket(self,pkttype,pktbuf):
         databuf=pkttype+struct.pack('!L',len(pktbuf)+4)+pktbuf
+        print 'Sent[%d]: %s'%(len(databuf),repr(databuf))
         self.transport.write(databuf)
         return
 
