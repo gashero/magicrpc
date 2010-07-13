@@ -22,27 +22,48 @@ from twisted.python import log
 from twisted.application import service,internet
 from twisted.internet import threads
 
+ProSts_WaitStartup=1
+ProSts_WaitAuth=2
+
 class PGProtocol(protocol.Protocol):
     """PostgreSQL protocol"""
 
     _buffer=''
     _authed=False
+    _status=ProSts_WaitStartup
 
     def connectionMade(self):
+        print 'ConnectionMade()'
         return
 
     def connectionLost(self,reason):
+        print 'ConnectionLost()'
         return
 
     def dataReceived(self,data):
         self._buffer+=data
+        print 'DataReceived()=%s'%repr(data)
+        if len(self._buffer)>=5:
+            if self._status==ProSts_WaitStartup:
+                pktlen=struct.unpack('!L',self._buffer[:4])[0]
+                if len(self._buffer)>=pktlen:
+                    pktbuf=self._buffer[4:pktlen]
+                    self._buffer=self._buffer[pktlen:]
+                    print 'StartUp[%d]: %s'%(len(pktbuf),repr(pktbuf))
+                    #self.sendPacket('R',struct.pack('!l',5)+'aaaa') #要求MD5认证
+                    self.sendPacket('R',struct.pack('!l',3))        #要求clear-text密码
+                    self._status=ProSts_WaitAuth
+            elif self._status==ProSts_WaitAuth:
+                pkttype=self._buffer[0]
+                pktlen=struct.unpack('!L',self._buffer[1:5])[0]
         return
 
-    def sendPacket(self,pkt):
-        self.transport.write(pkt)
+    def sendPacket(self,pkttype,pktbuf):
+        databuf=pkttype+struct.pack('!L',len(pktbuf)+4)+pktbuf
+        self.transport.write(databuf)
         return
 
-class PGFactory(protocol.Factory):
+class PGFactory(protocol.ServerFactory):
     """PostgreSQL factory"""
     protocol=PGProtocol
 
@@ -64,7 +85,7 @@ class PGService(internet.TCPServer):
 
 def start_console(cmdmapping,port=5432,threadcount=10):
     """start at console"""
-    log.startlogging(sys.stdout)
+    log.startLogging(sys.stdout)
     reactor.listenTCP(port,PGFactory(cmdmapping))
     reactor.suggestThreadPoolSize(threadcount)
     reactor.run()
