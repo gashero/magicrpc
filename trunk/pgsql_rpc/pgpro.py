@@ -84,7 +84,25 @@ class PGProtocol(protocol.Protocol):
                     #self.sendPacket('R',INT32(0))
                     #self.sendPacket('Z',INT32(5)+'I')
                     self._status=ProSts_WaitQuery
-                    self.transport.write('R\x00\x00\x00\x08\x00\x00\x00\x00S\x00\x00\x00\x19client_encoding\x00UTF8\x00S\x00\x00\x00\x17DateStyle\x00ISO, YMD\x00S\x00\x00\x00\x19integer_datetimes\x00on\x00S\x00\x00\x00\x14is_superuser\x00on\x00S\x00\x00\x00\x19server_encoding\x00UTF8\x00S\x00\x00\x00\x1aserver_version\x008.3.11\x00S\x00\x00\x00#session_authorization\x00postgres\x00S\x00\x00\x00$standard_conforming_strings\x00off\x00S\x00\x00\x00\x11TimeZone\x00PRC\x00K\x00\x00\x00\x0c\x00\x00&\xefY3>\xc1Z\x00\x00\x00\x05I')
+                    self.sendPacket('R',INT32(0))
+                    self.transport.write('S\x00\x00\x00\x19client_encoding\x00UTF8\x00S\x00\x00\x00\x17DateStyle\x00ISO, YMD\x00S\x00\x00\x00\x19integer_datetimes\x00on\x00S\x00\x00\x00\x14is_superuser\x00on\x00S\x00\x00\x00\x19server_encoding\x00UTF8\x00S\x00\x00\x00\x1aserver_version\x008.3.11\x00S\x00\x00\x00#session_authorization\x00postgres\x00S\x00\x00\x00$standard_conforming_strings\x00off\x00S\x00\x00\x00\x11TimeZone\x00PRC\x00K\x00\x00\x00\x0c\x00\x00&\xefY3>\xc1')
+                    self.sendPacket('Z','I')
+            elif self._status==ProSts_WaitQuery:
+                pkttype=self._buffer[0]
+                pktlen=struct.unpack('!L',self._buffer[1:5])[0]
+                if len(self._buffer)>=pktlen+1:
+                    pktbuf=self._buffer[5:pktlen+1]
+                    self._buffer=self._buffer[pktlen+1:]
+                    if pkttype=='Q':
+                        #查询
+                        query=pktbuf[:-1]
+                        print 'Query[%d]: %s, query=%s'%(len(pktbuf),repr(pktbuf),query)
+                    elif pkttype=='X':
+                        #关闭
+                        assert pktbuf==''
+                        self.transport.loseConnection()
+                    else:
+                        print 'UCommand[%d]: %s'%(len(pktbuf),repr(pktbuf))
             else:
                 pkttype=self._buffer[0]
                 pktlen=struct.unpack('!L',self._buffer[1:5])[0]
