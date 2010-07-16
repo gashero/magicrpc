@@ -85,7 +85,16 @@ class PGProtocol(protocol.Protocol):
                     #self.sendPacket('Z',INT32(5)+'I')
                     self._status=ProSts_WaitQuery
                     self.sendPacket('R',INT32(0))
-                    self.transport.write('S\x00\x00\x00\x19client_encoding\x00UTF8\x00S\x00\x00\x00\x17DateStyle\x00ISO, YMD\x00S\x00\x00\x00\x19integer_datetimes\x00on\x00S\x00\x00\x00\x14is_superuser\x00on\x00S\x00\x00\x00\x19server_encoding\x00UTF8\x00S\x00\x00\x00\x1aserver_version\x008.3.11\x00S\x00\x00\x00#session_authorization\x00postgres\x00S\x00\x00\x00$standard_conforming_strings\x00off\x00S\x00\x00\x00\x11TimeZone\x00PRC\x00K\x00\x00\x00\x0c\x00\x00&\xefY3>\xc1')
+                    self.sendPacket('S','client_encoding\x00UTF8\x00')
+                    self.sendPacket('S','DateStyle\x00ISO, YMD\x00')
+                    self.sendPacket('S','integer_datetimes\x00on\x00')
+                    self.sendPacket('S','is_superuser\x00on\x00')
+                    self.sendPacket('S','server_encoding\x00UTF8\x00')
+                    self.sendPacket('S','server_version\x008.3.11\x00')
+                    self.sendPacket('S','session_authorization\x00postgres\x00')
+                    self.sendPacket('S','standard_conforming_strings\x00off\x00')
+                    self.sendPacket('S','TimeZone\x00PRC\x00')
+                    self.sendPacket('K','\x00\x00&\xefY3>\xc1')
                     self.sendPacket('Z','I')
             elif self._status==ProSts_WaitQuery:
                 pkttype=self._buffer[0]
@@ -97,6 +106,9 @@ class PGProtocol(protocol.Protocol):
                         #查询
                         query=pktbuf[:-1]
                         print 'Query[%d]: %s, query=%s'%(len(pktbuf),repr(pktbuf),query)
+                        self.sendPacket('T','\x00\x01idx\x00\x00\x00@\x00\x00\x01\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x00')
+                        self.sendPacket('C','SELECT\x00')
+                        self.sendPacket('Z','I')
                     elif pkttype=='X':
                         #关闭
                         assert pktbuf==''
@@ -114,7 +126,7 @@ class PGProtocol(protocol.Protocol):
 
     def sendPacket(self,pkttype,pktbuf):
         databuf=pkttype+struct.pack('!L',len(pktbuf)+4)+pktbuf
-        print 'Sent[%d]: %s'%(len(databuf),repr(databuf))
+        #print 'Sent[%d]: %s'%(len(databuf),repr(databuf))
         self.transport.write(databuf)
         return
 
