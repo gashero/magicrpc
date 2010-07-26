@@ -65,7 +65,11 @@ class PGProtocol(protocol.Protocol):
                 if len(self._buffer)>=pktlen:
                     pktbuf=self._buffer[4:pktlen]
                     self._buffer=self._buffer[pktlen:]
-                    print 'StartUp[%d]: %s'%(len(pktbuf),repr(pktbuf))  #8.3发来的是\x04\xd2\x16\x2f
+                    protocol_version=pktbuf[:4]
+                    pairlist=pktbuf[4:].split('\x00')[:-2]
+                    #print 'StartUp[%d]: %s'%(len(pktbuf),repr(pktbuf))  #8.3发来的是\x04\xd2\x16\x2f
+                    print 'Startup[%d]: ProtoVer=%s Pairlist=%s'%(len(pktbuf),repr(protocol_version),repr(pairlist))
+                    #print 'Pairlist: %s'%repr(pairlist)
                     #TODO:startup包还没解析
                     self._status=ProSts_WaitAuthClearText
                     #self.sendPacket('R',struct.pack('!l',5)+'aaaa') #要求MD5认证
