@@ -25,9 +25,11 @@ from twisted.internet import threads
 ProSts_AskSSL=1
 ProSts_WaitStartup=2
 ProSts_WaitAuthClearText=3
-ProSts_WaitQuery=4
+ProSts_WaitAuthMD5=4
+ProSts_WaitQuery=50
 
 INT32=lambda i:struct.pack('!l',i)
+salt=lambda length:''.join([chr(random.choice(range(33,120))) for x in range(length)])
 
 class PGProtocol(protocol.Protocol):
     """PostgreSQL protocol"""
@@ -39,6 +41,7 @@ class PGProtocol(protocol.Protocol):
     def connectionMade(self):
         print 'ConnectionMade()'
         #self.transport.write('N')
+        self.saltstr=salt(4)
         return
 
     def connectionLost(self,reason):
@@ -50,13 +53,16 @@ class PGProtocol(protocol.Protocol):
         print 'DataReceived()=%s'%repr(data)
         if len(self._buffer)>=5:
             if self._status==ProSts_AskSSL:
+                #询问SSL的部分直接拒绝掉
                 pktlen=struct.unpack('!L',self._buffer[:4])[0]
                 if len(self._buffer)>=pktlen:
                     pktbuf=self._buffer[4:pktlen]
                     self._buffer=self._buffer[pktlen:]
                     if pktbuf[:4]=='\x00\x03\x00\x00':
-                        self._status=ProSts_WaitAuthClearText
-                        self.sendPacket('R',INT32(3))        #要求clear-text密码
+                        #self._status=ProSts_WaitAuthClearText
+                        #self.sendPacket('R',INT32(3))        #要求clear-text密码
+                        self._status=ProSts_WaitAuthMD5
+                        self.sendPacket('R',INT32(5)+self.saltstr)
                     elif pktbuf[:4]=='\x04\xd2\x16\x2f':
                         self.transport.write('N')
                         self._status=ProSts_WaitStartup
@@ -68,12 +74,17 @@ class PGProtocol(protocol.Protocol):
                     protocol_version=pktbuf[:4]
                     pairlist=pktbuf[4:].split('\x00')[:-2]
                     #print 'StartUp[%d]: %s'%(len(pktbuf),repr(pktbuf))  #8.3发来的是\x04\xd2\x16\x2f
-                    print 'Startup[%d]: ProtoVer=%s Pairlist=%s'%(len(pktbuf),repr(protocol_version),repr(pairlist))
+                    #print 'Startup[%d]: ProtoVer=%s Pairlist=%s'%(len(pktbuf),repr(protocol_version),repr(pairlist))
                     #print 'Pairlist: %s'%repr(pairlist)
-                    #TODO:startup包还没解析
-                    self._status=ProSts_WaitAuthClearText
+                    infodict={}
+                    for idx in range(len(pairlist)/2):
+                        infodict[pairlist[idx*2]]=pairlist[idx*2+1]
+                    self.username=infodict['user']
+                    self.cmdmapping['startup'](protocol_version,infodict)
                     #self.sendPacket('R',struct.pack('!l',5)+'aaaa') #要求MD5认证
-                    self.sendPacket('R',INT32(3))        #要求clear-text密码
+                    #self.sendPacket('R',INT32(3))        #要求clear-text密码
+                    self._status=ProSts_WaitAuthMD5
+                    self.sendPacket('R',INT32(5)+self.saltstr)
             elif self._status==ProSts_WaitAuthClearText:
                 pkttype=self._buffer[0]
                 pktlen=struct.unpack('!L',self._buffer[1:5])[0]
@@ -100,6 +111,26 @@ class PGProtocol(protocol.Protocol):
                     self.sendPacket('S','TimeZone\x00PRC\x00')
                     self.sendPacket('K','\x00\x00&\xefY3>\xc1')
                     self.sendPacket('Z','I')
+            elif self._status==ProSts_WaitAuthMD5:
+                pkttype=self._buffer[0]
+                pktlen=struct.unpack('!L',self._buffer[1:5])[0]
+                if len(self._buffer)>=pktlen+1:
+                    pktbuf=self._buffer[5:pktlen+1]
+                    self._buffer=self._buffer[pktlen+1:]
+                    print 'AuthMD5[%d]: %s'%(len(pktbuf),repr(pktbuf))
+                    if self.cmdmapping['authmd5'](self.username,self.saltstr,pktbuf[3:-1]):
+                        self._status=ProSts_WaitQuery
+                        self.sendPacket('R',INT32(0))
+                        for (k,v) in self.cmdmapping['deslist']:
+                            self.sendPacket('S','%s\x00%s\x00'%(k,v))
+                        self.sendPacket('K','\x00\x00&\xefY3>\xc1')
+                        self.sendPacket('Z','I')
+                    else:
+                        #认证失败，干掉连接
+                        #print 'Failed'
+                        #self.sendPacket('E','Fuck you!')
+                        self.sendPacket('E','S\xe8\x87\xb4\xe5\x91\xbd\xe9\x94\x99\xe8\xaf\xaf\x00C28000\x00M\xe7\x94\xa8\xe6\x88\xb7 "dbu" Password \xe8\xae\xa4\xe8\xaf\x81\xe5\xa4\xb1\xe8\xb4\xa5\x00Fauth.c\x00L1017\x00Rauth_failed\x00\x00')
+                        self.transport.loseConnection()
             elif self._status==ProSts_WaitQuery:
                 pkttype=self._buffer[0]
                 pktlen=struct.unpack('!L',self._buffer[1:5])[0]
@@ -132,6 +163,9 @@ class PGProtocol(protocol.Protocol):
         databuf=pkttype+struct.pack('!L',len(pktbuf)+4)+pktbuf
         #print 'Sent[%d]: %s'%(len(databuf),repr(databuf))
         self.transport.write(databuf)
+        return
+
+    def queryReceived(self,query):
         return
 
 class PGFactory(protocol.ServerFactory):

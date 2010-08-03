@@ -6,11 +6,42 @@
 
 import os
 import sys
+import md5
 
 import pgpro
 import pgrpc
 
-cmdmapping={}
+md5sum=lambda d:md5.md5(d).hexdigest()
+
+DescribeList=[
+        ('client_encoding','UTF8'),
+        ('DateStyle','ISO, YMD'),
+        ('integer_datetimes','on'),
+        ('is_superuser','on'),
+        ('server_encoding','UTF8'),
+        ('server_version','8.3.11'),
+        ('session_authorization','postgres'),
+        ('standard_conforming_strings','off'),
+        ('TimeZone','PRC'),
+        ]
+
+def startup(protocol_version,infodict):
+    print 'Startup: %s %s'%(repr(protocol_version),repr(infodict))
+    return
+
+def authmd5(username,saltstr,md5pass):
+    password='dddd'
+    print 'AuthMD5: %s %s %s'%(username,saltstr,md5pass)
+    if md5pass==md5sum(md5sum(password+username)+saltstr):
+        return True
+    else:
+        return False
+
+cmdmapping={
+        'authmd5':authmd5,
+        'startup':startup,
+        'deslist':DescribeList,
+        }
 
 if __name__=='__main__':
     pgpro.start_console(cmdmapping,port=5440)
