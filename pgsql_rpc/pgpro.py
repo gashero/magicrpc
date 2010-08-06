@@ -28,15 +28,39 @@ ProSts_WaitAuthClearText=3
 ProSts_WaitAuthMD5=4
 ProSts_WaitQuery=50
 
+ProSts_Startup=10
+
 INT32=lambda i:struct.pack('!l',i)
 salt=lambda length:''.join([chr(random.choice(range(33,120))) for x in range(length)])
+
+def extract_packet(_buffer):
+    """按照PostgreSQL的协议进行解包"""
+    if len(_buffer)>=5:
+        mtype=_buffer[0]
+        msglen=struct.unpack('!L',_buffer[1:5])[0]
+        if len(_buffer)>=msglen+1:
+            return _buffer[5:msglen+1],_buffer[msglen+1:]
+    return None,_buffer
+
+class PGBuffer(object):
+    """按照PostgreSQL协议定义的缓存管理"""
+    _buffer=''
+
+    def __init__(self):
+        return
+
+    def feed(self,chunk):
+        return
+
+    def __iter__(self):
+        return
 
 class PGProtocol(protocol.Protocol):
     """PostgreSQL protocol"""
 
-    _buffer=''
+    _buffer='\x00'
     _authed=False
-    _status=ProSts_AskSSL
+    _status=ProSts_Startup
 
     def connectionMade(self):
         print 'ConnectionMade()'
@@ -48,7 +72,17 @@ class PGProtocol(protocol.Protocol):
         print 'ConnectionLost()'
         return
 
-    def dataReceived(self,data):
+    def dataReceived(self,chunk):
+        self._buffer+=data
+        print 'dataReceived()=%s'%repr(chunk)
+        while True:
+            packet,self._buffer=extract_packet(self._buffer)
+        #if self._status==ProSts_Startup:
+        #    firstheader=self._buffer[:8]
+        #    if firstheader=='\x00\x00\x00\x08'+struct.pack('l',1234*0xffff+5679):
+        return
+
+    def _dataReceived(self,data):
         self._buffer+=data
         print 'DataReceived()=%s'%repr(data)
         if len(self._buffer)>=5:
