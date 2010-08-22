@@ -23,10 +23,10 @@ from twisted.application import service,internet
 from twisted.internet import threads
 
 ProSts_AskSSL=1
-ProSts_WaitStartup=2
-ProSts_WaitAuthClearText=3
-ProSts_WaitAuthMD5=4
-ProSts_WaitQuery=50
+ProSts_Startup=2
+ProSts_AuthClearText=3
+ProSts_AuthMD5=4
+ProSts_Query=50
 
 ProSts_Startup=10
 
@@ -39,8 +39,8 @@ def extract_packet(_buffer):
         mtype=_buffer[0]
         msglen=struct.unpack('!L',_buffer[1:5])[0]
         if len(_buffer)>=msglen+1:
-            return _buffer[5:msglen+1],_buffer[msglen+1:]
-    return None,_buffer
+            return _buffer[5:msglen+1],mtype,_buffer[msglen+1:]
+    return None,None,_buffer
 
 class PGBuffer(object):
     """按照PostgreSQL协议定义的缓存管理"""
@@ -60,7 +60,7 @@ class PGProtocol(protocol.Protocol):
 
     _buffer='\x00'
     _authed=False
-    _status=ProSts_Startup
+    _status=ProSts_AskSSL
 
     def connectionMade(self):
         print 'ConnectionMade()'
@@ -73,13 +73,78 @@ class PGProtocol(protocol.Protocol):
         return
 
     def dataReceived(self,chunk):
-        self._buffer+=data
-        print 'dataReceived()=%s'%repr(chunk)
+        self._buffer+=chunk
+        #print 'dataReceived()=%s'%repr(chunk)
         while True:
-            packet,self._buffer=extract_packet(self._buffer)
-        #if self._status==ProSts_Startup:
-        #    firstheader=self._buffer[:8]
-        #    if firstheader=='\x00\x00\x00\x08'+struct.pack('l',1234*0xffff+5679):
+            packet,mtype,self._buffer=extract_packet(self._buffer)
+            if packet==None:
+                break
+            if self._status==ProSts_AskSSL:
+                if packet=='\x04\xd2\x16\x2f':
+                    self._status=ProSts_Startup
+                    self.transport.write('N')
+                    self._buffer+='\x00'
+                elif packet.startswith('\x00\x03\x00\x00'):
+                    protocol_version=packet[:4]
+                    pairlist=packet[4:].split('\x00')[:-2]
+                    infodict={}
+                    for idx in range(len(pairlist)/2):
+                        infodict[pairlist[idx*2]]=pairlist[idx*2+1]
+                    self.username=infodict['user']
+                    self.cmdmapping['startup'](protocol_version,infodict)
+                    self._status=ProSts_AuthMD5
+                    self.sendPacket('R',INT32(5)+self.saltstr)
+                else:
+                    print 'AskSSL_ERROR: mtype=%s packet=%s'%(
+                            repr(mtype),repr(packet))
+                    self.transport.loseConnection()
+            elif self._status==ProSts_Startup:
+                if packet.startswith('\x00\x03\x00\x00'):
+                    protocol_version=packet[:4]
+                    pairlist=packet[4:].split('\x00')[:-2]
+                    infodict={}
+                    for idx in range(len(pairlist)/2):
+                        infodict[pairlist[idx*2]]=pairlist[idx*2+1]
+                    self.username=infodict['user']
+                    self.cmdmapping['startup'](protocol_version,infodict)
+                    self._status=ProSts_AuthMD5
+                    self.sendPacket('R',INT32(5)+self.saltstr)
+                else:
+                    print 'Startup_ERROR: mtype=%s packet=%s'%(
+                            repr(mtype),repr(packet))
+                    self.transport.loseConnection()
+            elif self._status==ProSts_AuthMD5:
+                if not mtype=='p':
+                    print 'AuthMD5: mtype=%s packet=%s'%(
+                            repr(mtype),repr(packet))
+                    self.transport.loseConnection()
+                if self.cmdmapping['authmd5'](self.username,self.saltstr,
+                        packet[3:-1]):
+                    self._status=ProSts_Query
+                    self.sendPacket('R',INT32(0))
+                    for (k,v) in self.cmdmapping['deslist']:
+                        self.sendPacket('S','%s\x00%s\x00'%(k,v))
+                    self.sendPacket('K','\x00\x00&\xefY3>\xc1')
+                    self.sendPacket('Z','I')
+                else:
+                    self.sendPacket('E','S\xe8\x87\xb4\xe5\x91\xbd\xe9\x94\x99\xe8\xaf\xaf\x00C28000\x00M\xe7\x94\xa8\xe6\x88\xb7 "dbu" Password \xe8\xae\xa4\xe8\xaf\x81\xe5\xa4\xb1\xe8\xb4\xa5\x00Fauth.c\x00L1017\x00Rauth_failed\x00\x00')
+                    self.transport.loseConnection()
+            elif self._status==ProSts_Query:
+                if mtype=='Q':
+                    query=packet[:-1]
+                    print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query)
+                    self.sendPacket('T','\x00\x01idx\x00\x00\x00@\x00\x00\x01\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x00')
+                    self.sendPacket('C','SELECT\x00')
+                    self.sendPacket('Z','I')
+                elif mtype=='X':
+                    assert packet==''
+                    self.transport.loseConnection()
+                else:
+                    print 'UnknownQuery[%d]: mtype=%s, packet=%s'%repr(len(packet),repr(mtype),repr(packet))
+                    self.transport.loseConnection()
+            else:
+                print 'UnknownPacket: mtype=%s,packet=%s'%(repr(mtype),repr(packet))
+                self.transport.loseConnection()
         return
 
     def _dataReceived(self,data):
