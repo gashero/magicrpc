@@ -133,9 +133,12 @@ class PGProtocol(protocol.Protocol):
                 if mtype=='Q':
                     query=packet[:-1]
                     print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query)
-                    #self.sendPacket('T','\x00\x01idx\x00\x00\x00@\x00\x00\x01\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x00')
-                    #self.sendPacket('C','SELECT\x00')
-                    self.sendPacket('E',simple_error('fuck','fuck you!'))
+                    #self.sendPacket('E',simple_error('fuck','fuck you!'))
+                    coldef,pktlist,complete=simple_dataset('idx',['fuck1','fuck2','fuck3'])
+                    self.sendPacket('T',coldef)
+                    for pkt in pktlist:
+                        self.sendPacket('D',pkt)
+                    self.sendPacket('C',complete)
                     self.sendPacket('Z','I')
                 elif mtype=='X':
                     assert packet==''
@@ -156,37 +159,18 @@ class PGProtocol(protocol.Protocol):
         self.transport.write(databuf)
         return
 
-class PGDataSet(object):
-    """DataSet packet"""
+def simple_dataset(colname,strlist):
+    coldef='\x00\x01%s\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x00'%(colname,)
+    pktlist=[]
+    for strcontent in strlist:
+        pktlist.append(
+                '\x00\x01%s%s'%(struct.pack('!L',len(strcontent)),strcontent)
+                )
+    complete='SELECT\x00'
+    return coldef,pktlist,complete
 
-    def __init__(self):
-        return
-
-class PGError(object):
-    """Database Error"""
-    keysort=('S','C','M','D','H','P','p','q','W','F','L','R')
-
-    #def __init__(self,severity='ERROR',code='P0001',message='error',file_='happy.c',line=0,routine='function'):
-    #    self.infopack={
-    #            'S':severity,
-    #            'C':code,
-    #            'M':message,
-    #            'F':file_,
-    #            'L':str(line),
-    #            'R':routine,
-    #            }
-    #    return
-
-    def __call__(self):
-        retstr=''
-        for key in self.keysort:
-            try:
-                val=self.infopack[key]
-                retstr+='%s%s\x00'%(key,val)
-            except KeyError:
-                pass
-        retstr+='\x00'
-        return retstr
+def simple_status(key,value):
+    return '%s\x00%s\x00'%(key,value)
 
 def simple_error(message,detail=''):
     if detail:
