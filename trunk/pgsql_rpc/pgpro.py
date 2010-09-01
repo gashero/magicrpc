@@ -124,7 +124,7 @@ class PGProtocol(protocol.Protocol):
                     self.sendPacket('R',INT32(0))
                     for (k,v) in self.cmdmapping['deslist']:
                         self.sendPacket('S','%s\x00%s\x00'%(k,v))
-                    self.sendPacket('K','\x00\x00&\xefY3>\xc1')
+                    self.sendPacket('K','\x00\x00&\xefY3>\xc1') #TODO: backendkeydata
                     self.sendPacket('Z','I')
                 else:
                     self.sendPacket('E','S\xe8\x87\xb4\xe5\x91\xbd\xe9\x94\x99\xe8\xaf\xaf\x00C28000\x00M\xe7\x94\xa8\xe6\x88\xb7 "dbu" Password \xe8\xae\xa4\xe8\xaf\x81\xe5\xa4\xb1\xe8\xb4\xa5\x00Fauth.c\x00L1017\x00Rauth_failed\x00\x00')
@@ -133,8 +133,9 @@ class PGProtocol(protocol.Protocol):
                 if mtype=='Q':
                     query=packet[:-1]
                     print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query)
-                    self.sendPacket('T','\x00\x01idx\x00\x00\x00@\x00\x00\x01\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x00')
-                    self.sendPacket('C','SELECT\x00')
+                    #self.sendPacket('T','\x00\x01idx\x00\x00\x00@\x00\x00\x01\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x00')
+                    #self.sendPacket('C','SELECT\x00')
+                    self.sendPacket('E',simple_error('fuck','fuck you!'))
                     self.sendPacket('Z','I')
                 elif mtype=='X':
                     assert packet==''
@@ -154,6 +155,43 @@ class PGProtocol(protocol.Protocol):
         #print 'Sent[%d]: %s'%(len(databuf),repr(databuf))
         self.transport.write(databuf)
         return
+
+class PGDataSet(object):
+    """DataSet packet"""
+
+    def __init__(self):
+        return
+
+class PGError(object):
+    """Database Error"""
+    keysort=('S','C','M','D','H','P','p','q','W','F','L','R')
+
+    #def __init__(self,severity='ERROR',code='P0001',message='error',file_='happy.c',line=0,routine='function'):
+    #    self.infopack={
+    #            'S':severity,
+    #            'C':code,
+    #            'M':message,
+    #            'F':file_,
+    #            'L':str(line),
+    #            'R':routine,
+    #            }
+    #    return
+
+    def __call__(self):
+        retstr=''
+        for key in self.keysort:
+            try:
+                val=self.infopack[key]
+                retstr+='%s%s\x00'%(key,val)
+            except KeyError:
+                pass
+        retstr+='\x00'
+        return retstr
+
+def simple_error(message,detail=''):
+    if detail:
+        detail='D%s\x00'%detail
+    return 'SERROR\x00CP0001\x00M%s\x00%s\x00'%(message,detail)
 
 class PGFactory(protocol.ServerFactory):
     """PostgreSQL factory"""
