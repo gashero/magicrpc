@@ -17,10 +17,10 @@ DescribeList=[
         ('client_encoding','UTF8'),
         ('DateStyle','ISO, YMD'),
         ('integer_datetimes','on'),
-        ('is_superuser','on'),
+        ('is_superuser','off'),
         ('server_encoding','UTF8'),
         ('server_version','8.3.11'),
-        ('session_authorization','postgres'),
+        ('session_authorization','postgres'),   #this value is username
         ('standard_conforming_strings','off'),
         ('TimeZone','PRC'),
         ]

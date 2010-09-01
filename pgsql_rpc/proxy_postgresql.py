@@ -18,6 +18,8 @@ import select
 import traceback
 import threading
 
+import pgpro
+
 PGSERVER=('localhost',5432)
 LOOPING=True
 
@@ -43,6 +45,14 @@ def trans(sock_up,sock_down):
             if data:
                 sock_client.send(data)
                 print '[D--]: %s'%repr(data)
+                _buffer=data
+                while True:
+                    packet,mtype,_buffer=pgpro.extract_packet(_buffer)
+                    if packet:
+                        print '[D--XX]: %s %s'%(repr(mtype),repr(packet))
+                    else:
+                        print '[D--XX]: left %d byte'%len(_buffer)
+                        break
             else:
                 print '[D--]: close'
                 sock_up.close()
