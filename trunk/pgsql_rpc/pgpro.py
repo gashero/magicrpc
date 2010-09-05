@@ -215,6 +215,8 @@ def start_daemon(cmdmapping,port=5432,threadcount=10):
 ## unittest ####################################################################
 
 import unittest
+import psycopg2
+import subprocess
 
 class TestProtocol(unittest.TestCase):
 
@@ -222,6 +224,15 @@ class TestProtocol(unittest.TestCase):
         return
 
     def tearDown(self):
+        return
+
+    def test_psql_show_is_superuser(self):
+        #cmd='psql -h localhost -Udbu -p5440 test -c "SHOW IS_SUPERUSER"'
+        cmd='psql -h localhost -Udbu -p5440 test -c "exit"'
+        pipe=subprocess.Popen(cmd,shell=True,stdout=subprocess.PIPE).stdout
+        output=pipe.read()
+        pipe.close()
+        #self.assertEqual(output.strip().startswith('is_superuser'),True)
         return
 
 if __name__=='__main__':
