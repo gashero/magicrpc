@@ -55,6 +55,17 @@ class PGBuffer(object):
     def __iter__(self):
         return
 
+class PGSimpleError(Exception):
+
+    def __init__(self,message,detail):
+        self.message=message
+        self.detail=detail
+        self.args=(message,detail)
+        return
+
+    def __str__(self):
+        return 'PGSimpleError(%s,%s)'%self.args
+
 class PGProtocol(protocol.Protocol):
     """PostgreSQL protocol"""
 
@@ -133,12 +144,29 @@ class PGProtocol(protocol.Protocol):
                 if mtype=='Q':
                     query=packet[:-1]
                     print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query)
+                    cmd,arg=query.strip().split(' ',1)
+                    cmd=cmd.strip().lower()
+                    arg=arg.strip()
+                    try:
+                        func=self.cmdmapping['cmd_'+cmd]
+                        colname,dataset=func(arg)
+                        coldef,pktlist,complete=simple_dataset(colname,dataset)
+                        self.sendPacket('T',coldef)
+                        for pkt in pktlist:
+                            self.sendPacket('D',pkt)
+                        self.sendPacket('C',complete)
+                    except KeyError:
+                        self.sendPacket('E',simple_error('UnknowmError: %s'%repr(cmd),query))
+                    except PGSimpleError,ex:
+                        self.sendPacket('E',simple_error(ex.message,ex.detail))
+                    except Exception,ex:
+                        self.sendPacket('E',simple_error('InternalError',repr(ex)))
                     #self.sendPacket('E',simple_error('fuck','fuck you!'))
-                    coldef,pktlist,complete=simple_dataset('idx',['fuck1','fuck2','fuck3'])
-                    self.sendPacket('T',coldef)
-                    for pkt in pktlist:
-                        self.sendPacket('D',pkt)
-                    self.sendPacket('C',complete)
+                    #coldef,pktlist,complete=simple_dataset('idx',['fuck1','fuck2','fuck3'])
+                    #self.sendPacket('T',coldef)
+                    #for pkt in pktlist:
+                    #    self.sendPacket('D',pkt)
+                    #self.sendPacket('C',complete)
                     self.sendPacket('Z','I')
                 elif mtype=='X':
                     assert packet==''
