@@ -43,8 +43,13 @@ cmdmapping={
         'deslist':DescribeList,
         }
 
+rpcserver=pgrpc.PgRpc({
+    'dbu':md5sum('dddd'+'dbu'),
+    })
+
 if __name__=='__main__':
-    pgpro.start_console(cmdmapping,port=5440)
+    #pgpro.start_console(cmdmapping,port=5440)
+    pgpro.start_console(rpcserver.cmdmapping,port=5440)
 elif __name__=='__builtin__':
     pgpro.start_daemon(cmdmapping,port=5440)
 else:

@@ -7,6 +7,15 @@
 A rpc wrapper to call and return
 """
 
+import os
+import sys
+import md5
+import traceback
+
+import pgpro
+
+md5sum=lambda d:md5.md5(d).hexdigest()
+
 DescribeList=[
         ('client_encoding','UTF8'),
         ('DateStyle','ISO, YMD'),
@@ -27,6 +36,9 @@ class PgRpc(object):
                 'authmd5':self.authmd5,
                 'startup':self.startup,
                 'deslist':DescribeList,
+                'cmd_select':self.cmd_select,
+                'cmd_show':self.cmd_show,
+                'cmd_set':self.cmd_set,
                 }
         return
 
@@ -35,18 +47,36 @@ class PgRpc(object):
         return
 
     def authmd5(self,username,saltstr,md5pass):
-        return
+        try:
+            userpass_md5=self.userpass_md5dict[username]
+            if md5pass==md5sum(userpass_md5+saltstr):
+                return True
+            else:
+                return False
+        except KeyError:
+            return False
+        except Exception,ex:
+            traceback.print_exc()
+            #print str(ex)
+            return False
 
-    def query(self,querystring):
-        return
+    def cmd_select(self,querystring):
+        raise pgpro.PGSimpleError('hello','fuck')
 
-    def funccall(self,callstring):
-        return
+    def cmd_show(self,querystring):
+        raise pgpro.PGSimpleError('hello','fuck')
+
+    def cmd_set(self,querystring):
+        raise pgpro.PGSimpleError('hello','fuck')
+
+    #def funccall(self,callstring):
+    #    return
 
 ## unittest ####################################################################
 
 import unittest
 import psycopg2
+import subprocess
 
 class TestPgRpc(unittest.TestCase):
 
