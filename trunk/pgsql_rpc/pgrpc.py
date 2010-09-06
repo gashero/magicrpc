@@ -28,6 +28,30 @@ DescribeList=[
         ('TimeZone','PRC'),
         ]
 
+CommonResponse={
+        "SET DATESTYLE TO 'ISO'":[
+            ('S','DateStyle\x00ISO, YMD\x00'),
+            ('C','SET\x00'),
+            ('Z','I'),
+            ],
+        'SHOW client_encoding':[
+            ('T','\x00\x01client_encoding\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\xff\xff\xff\xff\xff\xff\x00\x00'),
+            ('D','\x00\x01\x00\x00\x00\x04UTF8'),
+            ('C','SHOW\x00'),
+            ('Z','I'),],
+        'SHOW default_transaction_isolation':[
+            ('T','\x00\x01default_transaction_isolation\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\xff\xff\xff\xff\xff\xff\x00\x00'),
+            ('D','\x00\x01\x00\x00\x00\x0eread committed'),
+            ('C','SHOW\x00'),
+            ('Z','I'),],
+        'BEGIN; SET TRANSACTION ISOLATION LEVEL READ COMMITTED':[
+            ('C','BEGIN\x00'),
+            ('C','SET\x00'),
+            ('Z','T'),
+            ],
+        }
+
+
 class PgRpc(object):
 
     def __init__(self,userpass_md5dict):
@@ -36,10 +60,11 @@ class PgRpc(object):
                 'authmd5':self.authmd5,
                 'startup':self.startup,
                 'deslist':DescribeList,
+                'query':self.query,
+                #internal mapping
                 'cmd_select':self.cmd_select,
                 'cmd_show':self.cmd_show,
                 'cmd_set':self.cmd_set,
-                'cmd_all':self.cmd_all,
                 }
         return
 
@@ -62,19 +87,19 @@ class PgRpc(object):
             return False
 
     def cmd_select(self,querystring):
-        return ('idx',['hello1','hello2'])
+        return ('idx',['hello1',])
         raise pgpro.PGSimpleError('hello','fuck')
 
     def cmd_show(self,querystring):
         if querystring=='client_encoding':
-            raise pgpro.SpecialPacket([
+            raise pgpro.OriginPacket([
                 ('T','\x00\x01client_encoding\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\xff\xff\xff\xff\xff\xff\x00\x00'),
                 ('D','\x00\x01\x00\x00\x00\x04UTF8'),
                 ('C','SHOW\x00'),
                 ('Z','I'),
                 ])
         elif querystring=='default_transaction_isolation':
-            raise pgpro.SpecialPacket([
+            raise pgpro.OriginPacket([
                 ('T','\x00\x01default_transaction_isolation\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\xff\xff\xff\xff\xff\xff\x00\x00'),
                 ('D','\x00\x01\x00\x00\x00\x0eread committed'),
                 ('C','SHOW\x00'),
@@ -85,15 +110,33 @@ class PgRpc(object):
     def cmd_set(self,querystring):
         print 'QueryString: %s'%repr(querystring)
         if querystring=="DATESTYLE TO 'ISO'":
-            raise pgpro.SpecialPacket([
+            raise pgpro.OriginPacket([
                 ('S','DateStyle\x00ISO, YMD\x00'),
                 ('C','SET\x00'),
                 ])
         raise pgpro.PGSimpleError('hello','fuck')
 
-    def cmd_all(self,querystring):
-        print 'ALL: %s'%repr(querystring)
-        raise pgpro.PGSimpleError('hello','fuck')
+    def query(self,querystring):
+        try:
+            cresp=CommonResponse[querystring]
+            raise pgpro.OriginPacket(cresp)
+        except KeyError:
+            pass
+        try:
+            cmd,arg=querystring.strip().split(' ',1)
+            cmd=cmd.strip().lower()
+            arg=arg.strip()
+            func=self.cmdmapping.get('cmd_'+cmd)
+            if func:
+                ret=func(arg)
+                return ret
+            else:
+                print 'UnknownQuery: %s'%repr(querystring)
+                raise pgpro.PGSimpleError('UnknownQuery',repr(query))
+        except Exception,ex:
+            traceback.print_exc()
+            raise
+            #raise pgpro.PGSimpleError('hello','fuck')
 
     #def funccall(self,callstring):
     #    return
@@ -124,7 +167,7 @@ class TestPgRpc(unittest.TestCase):
     def test_psycopg2_connect(self):
         conn=psycopg2.connect(host='localhost',user='dbu',database='test',password='dddd',port=5440)
         cur=conn.cursor()
-        cur.execute('select hello')
+        cur.execute('SELECT name FROM pgtest1')
         dataset=cur.fetchall()
         print dataset
         cur.close()

@@ -66,7 +66,7 @@ class PGSimpleError(Exception):
     def __str__(self):
         return 'PGSimpleError(%s,%s)'%self.args
 
-class SpecialPacket(Exception):
+class OriginPacket(Exception):
 
     def __init__(self,packetlist):
         self.packetlist=packetlist
@@ -151,33 +151,35 @@ class PGProtocol(protocol.Protocol):
                     query=packet[:-1]
                     print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query.replace('\n',' '))
                     try:
-                        cmd,arg=query.strip().split(' ',1)
-                        cmd=cmd.strip().lower()
-                        arg=arg.strip()
-                        func_all=self.cmdmapping['cmd_all']
-                        func=self.cmdmapping.get('cmd_'+cmd,func_all)
-                        colname,dataset=func(arg)
+                        #cmd,arg=query.strip().split(' ',1)
+                        #cmd=cmd.strip().lower()
+                        #arg=arg.strip()
+                        #func_all=self.cmdmapping['cmd_all']
+                        #func=self.cmdmapping.get('cmd_'+cmd,func_all)
+                        func=self.cmdmapping['query']
+                        colname,dataset=func(query)
                         coldef,pktlist,complete=simple_dataset(colname,dataset)
                         self.sendPacket('T',coldef)
                         for pkt in pktlist:
                             self.sendPacket('D',pkt)
                         self.sendPacket('C',complete)
-                    #except KeyError:
-                    #    #self.sendPacket('E',simple_error('UnknowmError: %s'%repr(cmd),query))
+                        self.sendPacket('Z','I')
                     except PGSimpleError,ex:
                         self.sendPacket('E',simple_error(ex.message,ex.detail))
-                    except SpecialPacket,ex:
+                        self.sendPacket('Z','I')
+                    except OriginPacket,ex:
                         for pk in ex.packetlist:
                             self.sendPacket(pk[0],pk[1])
                     except Exception,ex:
                         self.sendPacket('E',simple_error('InternalError',repr(ex)))
+                        self.sendPacket('Z','I')
                     #self.sendPacket('E',simple_error('fuck','fuck you!'))
                     #coldef,pktlist,complete=simple_dataset('idx',['fuck1','fuck2','fuck3'])
                     #self.sendPacket('T',coldef)
                     #for pkt in pktlist:
                     #    self.sendPacket('D',pkt)
                     #self.sendPacket('C',complete)
-                    self.sendPacket('Z','I')
+                    #self.sendPacket('Z','I')
                 elif mtype=='X':
                     assert packet==''
                     self.transport.loseConnection()
@@ -198,7 +200,8 @@ class PGProtocol(protocol.Protocol):
         return
 
 def simple_dataset(colname,strlist):
-    coldef='\x00\x01%s\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17\x00\x04\xff\xff\xff\xff\x00\x00'%(colname,)
+    #coldef='\x00\x01%s\x00\x00\x00@\x00\x00\x02\x00\x00\x04\x17\x00\x04\xff\xff\xff\xff\x00\x00'%(colname,)
+    coldef='\x00\x01%s\x00\x00\x00@\x05\x00\x02\x00\x00\x04\x13\xff\xff\x00\x00\x00D\x00\x00'%(colname,)
     pktlist=[]
     for strcontent in strlist:
         pktlist.append(
