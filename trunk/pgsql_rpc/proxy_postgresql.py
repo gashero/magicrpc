@@ -71,6 +71,9 @@ def main():
     thrd=threading.Thread(target=trans,args=(sock_up,sock_down))
     thrd.setDaemon(True)
     thrd.start()
+    thrd=threading.Thread(target=trans,args=(sock_up,sock_down))
+    thrd.setDaemon(True)
+    thrd.start()
     try:
         while LOOPING:
             time.sleep(0.5)
