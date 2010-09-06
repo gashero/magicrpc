@@ -114,7 +114,6 @@ class PgRpc(object):
             args=gdict['args']
             func=self.funcmapping.get(funcname)
             if func:
-                print 'CALL: func=%s args=%s'%(repr(funcname),repr(args))
                 if args:
                     ret=func(*eval(args))
                 else:
