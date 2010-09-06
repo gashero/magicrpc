@@ -66,6 +66,12 @@ class PGSimpleError(Exception):
     def __str__(self):
         return 'PGSimpleError(%s,%s)'%self.args
 
+class SpecialPacket(Exception):
+
+    def __init__(self,packetlist):
+        self.packetlist=packetlist
+        return
+
 class PGProtocol(protocol.Protocol):
     """PostgreSQL protocol"""
 
@@ -143,22 +149,26 @@ class PGProtocol(protocol.Protocol):
             elif self._status==ProSts_Query:
                 if mtype=='Q':
                     query=packet[:-1]
-                    print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query)
-                    cmd,arg=query.strip().split(' ',1)
-                    cmd=cmd.strip().lower()
-                    arg=arg.strip()
+                    print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query.replace('\n',' '))
                     try:
-                        func=self.cmdmapping['cmd_'+cmd]
+                        cmd,arg=query.strip().split(' ',1)
+                        cmd=cmd.strip().lower()
+                        arg=arg.strip()
+                        func_all=self.cmdmapping['cmd_all']
+                        func=self.cmdmapping.get('cmd_'+cmd,func_all)
                         colname,dataset=func(arg)
                         coldef,pktlist,complete=simple_dataset(colname,dataset)
                         self.sendPacket('T',coldef)
                         for pkt in pktlist:
                             self.sendPacket('D',pkt)
                         self.sendPacket('C',complete)
-                    except KeyError:
-                        self.sendPacket('E',simple_error('UnknowmError: %s'%repr(cmd),query))
+                    #except KeyError:
+                    #    #self.sendPacket('E',simple_error('UnknowmError: %s'%repr(cmd),query))
                     except PGSimpleError,ex:
                         self.sendPacket('E',simple_error(ex.message,ex.detail))
+                    except SpecialPacket,ex:
+                        for pk in ex.packetlist:
+                            self.sendPacket(pk[0],pk[1])
                     except Exception,ex:
                         self.sendPacket('E',simple_error('InternalError',repr(ex)))
                     #self.sendPacket('E',simple_error('fuck','fuck you!'))
