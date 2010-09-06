@@ -149,7 +149,7 @@ class PGProtocol(protocol.Protocol):
             elif self._status==ProSts_Query:
                 if mtype=='Q':
                     query=packet[:-1]
-                    print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query.replace('\n',' '))
+                    #print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query.replace('\n',' '))
                     try:
                         #cmd,arg=query.strip().split(' ',1)
                         #cmd=cmd.strip().lower()
@@ -203,7 +203,7 @@ class PGProtocol(protocol.Protocol):
 def simple_dataset(colname,strlist):
     #coldef='\x00\x01%s\x00\x00\x00@\x00\x00\x02\x00\x00\x04\x17\x00\x04\xff\xff\xff\xff\x00\x00'%(colname,)
     #coldef='\x00\x01%s\x00\x00\x00@\x05\x00\x02\x00\x00\x04\x13\xff\xff\x00\x00\x00D\x00\x00'%(colname,)
-    coldef='\x00\x01%s\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x13\xff\xff\x00\x00\x00D\x00\x00'%(colname,)
+    coldef='\x00\x01%s\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x13\xff\xff\x00\x00\x00\x00\x00\x00'%(colname,)
     #TODO:need test
     pktlist=[]
     for strcontent in strlist:
