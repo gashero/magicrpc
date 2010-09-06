@@ -8,13 +8,17 @@ A rpc wrapper to call and return
 """
 
 import os
+import re
 import sys
 import md5
+import time
 import traceback
 
 import pgpro
 
 md5sum=lambda d:md5.md5(d).hexdigest()
+now=lambda :time.strftime('%Y-%m-%d %H:%M:%S')
+RE_FUNCCALL_REPR=re.compile(r'''^(?P<funcname>\w+)\((?P<args>.*?)\)$''')
 
 DescribeList=[
         ('client_encoding','UTF8'),
@@ -54,7 +58,7 @@ CommonResponse={
 
 class PgRpc(object):
 
-    def __init__(self,userpass_md5dict):
+    def __init__(self,userpass_md5dict,funcmapping):
         self.userpass_md5dict=userpass_md5dict
         self.cmdmapping={
                 'authmd5':self.authmd5,
@@ -65,7 +69,9 @@ class PgRpc(object):
                 'cmd_select':self.cmd_select,
                 'cmd_show':self.cmd_show,
                 'cmd_set':self.cmd_set,
+                'cmd_call':self.cmd_call,
                 }
+        self.funcmapping=funcmapping
         return
 
     def startup(self,protocol_version,infodict):
@@ -87,34 +93,40 @@ class PgRpc(object):
             return False
 
     def cmd_select(self,querystring):
-        return ('idx',['hello1',])
-        raise pgpro.PGSimpleError('hello','fuck')
+        print 'SELECT: %s'%repr(querystring)
+        if querystring=='name FROM pgtest1':
+            #return ('name',['hello1','hello2','hello3'])
+            return 'hello1'
+        else:
+            raise pgpro.PGSimpleError('hello','fuck')
 
     def cmd_show(self,querystring):
-        if querystring=='client_encoding':
-            raise pgpro.OriginPacket([
-                ('T','\x00\x01client_encoding\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\xff\xff\xff\xff\xff\xff\x00\x00'),
-                ('D','\x00\x01\x00\x00\x00\x04UTF8'),
-                ('C','SHOW\x00'),
-                ('Z','I'),
-                ])
-        elif querystring=='default_transaction_isolation':
-            raise pgpro.OriginPacket([
-                ('T','\x00\x01default_transaction_isolation\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\xff\xff\xff\xff\xff\xff\x00\x00'),
-                ('D','\x00\x01\x00\x00\x00\x0eread committed'),
-                ('C','SHOW\x00'),
-                ('Z','I'),
-                ])
         raise pgpro.PGSimpleError('hello','fuck')
 
     def cmd_set(self,querystring):
-        print 'QueryString: %s'%repr(querystring)
-        if querystring=="DATESTYLE TO 'ISO'":
-            raise pgpro.OriginPacket([
-                ('S','DateStyle\x00ISO, YMD\x00'),
-                ('C','SET\x00'),
-                ])
         raise pgpro.PGSimpleError('hello','fuck')
+
+    def cmd_call(self,querystring):
+        matchobj=RE_FUNCCALL_REPR.search(querystring)
+        if matchobj:
+            gdict=matchobj.groupdict()
+            funcname=gdict['funcname']
+            args=gdict['args']
+            func=self.funcmapping.get(funcname)
+            if func:
+                print 'CALL: func=%s args=%s'%(repr(funcname),repr(args))
+                if args:
+                    ret=func(*eval(args))
+                else:
+                    ret=func()
+                return ret
+            else:
+                raise pgpro.PGSimpleError('FunctionNameError',\
+                        repr(funcname))
+        else:
+            raise pgpro.PGSimpleError('FunctionFormatError',\
+                    repr(querystring))
+        return
 
     def query(self,querystring):
         try:
@@ -129,17 +141,16 @@ class PgRpc(object):
             func=self.cmdmapping.get('cmd_'+cmd)
             if func:
                 ret=func(arg)
-                return ret
+                return ('result',[repr(ret),])
             else:
                 print 'UnknownQuery: %s'%repr(querystring)
-                raise pgpro.PGSimpleError('UnknownQuery',repr(query))
+                raise pgpro.PGSimpleError('UnknownQuery',repr(querystring))
+        except pgpro.PGSimpleError,ex:
+            raise
         except Exception,ex:
             traceback.print_exc()
             raise
             #raise pgpro.PGSimpleError('hello','fuck')
-
-    #def funccall(self,callstring):
-    #    return
 
 ## unittest ####################################################################
 
@@ -169,7 +180,22 @@ class TestPgRpc(unittest.TestCase):
         cur=conn.cursor()
         cur.execute('SELECT name FROM pgtest1')
         dataset=cur.fetchall()
-        print dataset
+        #print dataset
+        self.assertEqual(dataset,[("'hello1'",)])
+        cur.close()
+        conn.close()
+        return
+
+    def test_psycopg2_call_now(self):
+        conn=psycopg2.connect(host='localhost',user='dbu',database='test',password='dddd',port=5440)
+        cur=conn.cursor()
+        cur.execute('CALL now()')
+        dataset=cur.fetchall()
+        #print dataset
+        self.assertEqual(dataset[0],(repr(now()),))
+        cur.execute('CALL add(2,3)')
+        dataset=cur.fetchall()
+        self.assertEqual(dataset[0],(repr(5),))
         cur.close()
         conn.close()
         return

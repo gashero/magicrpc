@@ -7,11 +7,14 @@
 import os
 import sys
 import md5
+import time
 
 import pgpro
 import pgrpc
 
 md5sum=lambda d:md5.md5(d).hexdigest()
+now=lambda :time.strftime('%Y-%m-%d %H:%M:%S')
+_add=lambda x,y:x+y
 
 DescribeList=[
         ('client_encoding','UTF8'),
@@ -43,9 +46,14 @@ cmdmapping={
         'deslist':DescribeList,
         }
 
+funcmapping={
+        'now':now,
+        'add':_add,
+        }
+
 rpcserver=pgrpc.PgRpc({
     'dbu':md5sum('dddd'+'dbu'),
-    })
+    },funcmapping)
 
 if __name__=='__main__':
     #pgpro.start_console(cmdmapping,port=5440)

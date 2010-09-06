@@ -171,6 +171,7 @@ class PGProtocol(protocol.Protocol):
                         for pk in ex.packetlist:
                             self.sendPacket(pk[0],pk[1])
                     except Exception,ex:
+                        traceback.print_exc()
                         self.sendPacket('E',simple_error('InternalError',repr(ex)))
                         self.sendPacket('Z','I')
                     #self.sendPacket('E',simple_error('fuck','fuck you!'))
@@ -201,7 +202,9 @@ class PGProtocol(protocol.Protocol):
 
 def simple_dataset(colname,strlist):
     #coldef='\x00\x01%s\x00\x00\x00@\x00\x00\x02\x00\x00\x04\x17\x00\x04\xff\xff\xff\xff\x00\x00'%(colname,)
-    coldef='\x00\x01%s\x00\x00\x00@\x05\x00\x02\x00\x00\x04\x13\xff\xff\x00\x00\x00D\x00\x00'%(colname,)
+    #coldef='\x00\x01%s\x00\x00\x00@\x05\x00\x02\x00\x00\x04\x13\xff\xff\x00\x00\x00D\x00\x00'%(colname,)
+    coldef='\x00\x01%s\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x13\xff\xff\x00\x00\x00D\x00\x00'%(colname,)
+    #TODO:need test
     pktlist=[]
     for strcontent in strlist:
         pktlist.append(
