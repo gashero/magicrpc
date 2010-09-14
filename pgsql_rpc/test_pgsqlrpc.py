@@ -49,6 +49,7 @@ cmdmapping={
 funcmapping={
         'now':now,
         'add':_add,
+        'inc2':lambda x:x+2,
         }
 
 rpcserver=pgrpc.PgRpc({
