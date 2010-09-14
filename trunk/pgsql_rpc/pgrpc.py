@@ -114,10 +114,7 @@ class PgRpc(object):
             args=gdict['args']
             func=self.funcmapping.get(funcname)
             if func:
-                if args:
-                    ret=func(*eval(args))
-                else:
-                    ret=func()
+                ret=eval(querystring,{},self.funcmapping)
                 return ret
             else:
                 raise pgpro.PGSimpleError('FunctionNameError',\
@@ -190,10 +187,11 @@ class TestPgRpc(unittest.TestCase):
         cur=conn.cursor()
         cur.execute('CALL now()')
         dataset=cur.fetchall()
-        #print dataset
+        print dataset
         self.assertEqual(dataset[0],(repr(now()),))
         cur.execute('CALL add(2,3)')
         dataset=cur.fetchall()
+        print dataset
         self.assertEqual(dataset[0],(repr(5),))
         cur.close()
         conn.close()
