@@ -107,6 +107,8 @@ class PgRpc(object):
         raise pgpro.PGSimpleError('hello','fuck')
 
     def cmd_call(self,querystring):
+        if querystring.endswith(";"):
+            querystring=querystring[:-1]
         matchobj=RE_FUNCCALL_REPR.search(querystring)
         if matchobj:
             gdict=matchobj.groupdict()
@@ -187,12 +189,18 @@ class TestPgRpc(unittest.TestCase):
         cur=conn.cursor()
         cur.execute('CALL now()')
         dataset=cur.fetchall()
-        print dataset
+        #print dataset
         self.assertEqual(dataset[0],(repr(now()),))
         cur.execute('CALL add(2,3)')
         dataset=cur.fetchall()
-        print dataset
+        #print dataset
         self.assertEqual(dataset[0],(repr(5),))
+        cur.execute('CALL add(5,4);')
+        dataset=cur.fetchall()
+        self.assertEqual(dataset[0],(repr(9),))
+        cur.execute('CALL inc2(7);')
+        dataset=cur.fetchall()
+        self.assertEqual(dataset[0],(repr(9),))
         cur.close()
         conn.close()
         return
