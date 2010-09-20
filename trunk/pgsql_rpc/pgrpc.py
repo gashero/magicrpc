@@ -70,6 +70,13 @@ def expose(funcname,*args,**kwargs):
         return inter2
     return inter1
 
+def makepass(userpassdict):
+    """create userpass_md5dict from username and password dictionary."""
+    userpass_md5dict={}
+    for (username,password) in userpassdict.items():
+        userpass_md5dict[username]=md5sum(password+username)
+    return userpass_md5dict
+
 class PgRpc(object):
 
     def __init__(self,userpass_md5dict,funcmapping={}):
