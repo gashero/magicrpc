@@ -15,6 +15,7 @@ import time
 import traceback
 
 import pgpro
+from pgpro import start_console,start_daemon
 
 md5sum=lambda d:md5.md5(d).hexdigest()
 now=lambda :time.strftime('%Y-%m-%d %H:%M:%S')
@@ -55,6 +56,19 @@ CommonResponse={
             ],
         }
 
+exposed_funcmapping={}
+def expose(funcname,*args,**kwargs):
+    """declare function that call by rpc"""
+    global exposed_funcmapping
+    def inter1(func):
+        if not exposed_funcmapping.has_key(funcname):
+            exposed_funcmapping[funcname]=func
+        else:
+            raise KeyError,'funcname declare more than once.'
+        def inter2(*args,**kwargs):
+            return func(*args,**kwargs)
+        return inter2
+    return inter1
 
 class PgRpc(object):
 
