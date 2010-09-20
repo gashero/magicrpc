@@ -16,6 +16,7 @@ import traceback
 
 import pgpro
 from pgpro import start_console,start_daemon
+from pgpro import PGSimpleError as LogicError
 
 md5sum=lambda d:md5.md5(d).hexdigest()
 now=lambda :time.strftime('%Y-%m-%d %H:%M:%S')
@@ -224,6 +225,20 @@ class TestPgRpc(unittest.TestCase):
         cur.execute('CALL inc2(7);')
         dataset=cur.fetchall()
         self.assertEqual(dataset[0],(repr(9),))
+        cur.close()
+        conn.close()
+        return
+
+    def test_psycopg2_call_raiseerror(self):
+        conn=psycopg2.connect(host='localhost',user='dbu',database='test',password='dddd',port=5440)
+        cur=conn.cursor()
+        try:
+            cur.execute('CALL raiseerror()')
+        except psycopg2.InternalError,ex:
+            #print 'pgcode=',ex.pgcode
+            #print 'pgerror=',repr(ex.pgerror)
+            #print 'message=',repr(ex.message)
+            self.assertEqual(ex.message,'error\nDETAIL:  sth wrong\n')
         cur.close()
         conn.close()
         return
