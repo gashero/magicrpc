@@ -55,6 +55,10 @@ CommonResponse={
             ('C','SET\x00'),
             ('Z','T'),
             ],
+        'ROLLBACK':[
+            ('C','ROLLBACK\x00'),
+            ('Z','I'),
+            ],
         }
 
 exposed_funcmapping={}
@@ -170,9 +174,9 @@ class PgRpc(object):
         except pgpro.PGSimpleError,ex:
             raise
         except Exception,ex:
-            traceback.print_exc()
-            raise
-            #raise pgpro.PGSimpleError('hello','fuck')
+            #traceback.print_exc()
+            print '%s: querystring=%s'%(repr(ex),repr(querystring))
+            raise pgpro.PGSimpleError(repr(ex),repr(ex))
 
 ## unittest ####################################################################
 
