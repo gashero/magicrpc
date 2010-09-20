@@ -80,13 +80,12 @@ class PGProtocol(protocol.Protocol):
     _status=ProSts_AskSSL
 
     def connectionMade(self):
-        print 'ConnectionMade()'
-        #self.transport.write('N')
+        #print 'ConnectionMade()'
         self.saltstr=salt(4)
         return
 
     def connectionLost(self,reason):
-        print 'ConnectionLost()'
+        #print 'ConnectionLost()'
         return
 
     def dataReceived(self,chunk):

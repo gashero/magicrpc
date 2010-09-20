@@ -72,7 +72,7 @@ def expose(funcname,*args,**kwargs):
 
 class PgRpc(object):
 
-    def __init__(self,userpass_md5dict,funcmapping):
+    def __init__(self,userpass_md5dict,funcmapping={}):
         self.userpass_md5dict=userpass_md5dict
         self.cmdmapping={
                 'authmd5':self.authmd5,
@@ -86,10 +86,11 @@ class PgRpc(object):
                 'cmd_call':self.cmd_call,
                 }
         self.funcmapping=funcmapping
+        self.funcmapping.update(exposed_funcmapping)
         return
 
     def startup(self,protocol_version,infodict):
-        print 'Startup: %s %s'%(repr(protocol_version),repr(infodict))
+        #print 'Startup: %s %s'%(repr(protocol_version),repr(infodict))
         return
 
     def authmd5(self,username,saltstr,md5pass):
@@ -107,7 +108,7 @@ class PgRpc(object):
             return False
 
     def cmd_select(self,querystring):
-        print 'SELECT: %s'%repr(querystring)
+        #print 'SELECT: %s'%repr(querystring)
         if querystring=='name FROM pgtest1':
             #return ('name',['hello1','hello2','hello3'])
             return 'hello1'
@@ -128,6 +129,7 @@ class PgRpc(object):
             gdict=matchobj.groupdict()
             funcname=gdict['funcname']
             args=gdict['args']
+            #print 'funcmapping: %s'%repr(self.funcmapping)
             func=self.funcmapping.get(funcname)
             if func:
                 ret=eval(querystring,{},self.funcmapping)

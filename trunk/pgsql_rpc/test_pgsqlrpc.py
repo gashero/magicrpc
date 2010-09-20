@@ -10,18 +10,30 @@ import time
 
 import pgrpc
 
-now=lambda :time.strftime('%Y-%m-%d %H:%M:%S')
-_add=lambda x,y:x+y
+#now=lambda :time.strftime('%Y-%m-%d %H:%M:%S')
+#_add=lambda x,y:x+y
 
-funcmapping={
-        'now':now,
-        'add':_add,
-        'inc2':lambda x:x+2,
-        }
+#funcmapping={
+#        'now':now,
+#        'add':_add,
+#        'inc2':lambda x:x+2,
+#        }
+
+@pgrpc.expose('now')
+def now():
+    return time.strftime('%Y-%m-%d %H:%M:%S')
+
+@pgrpc.expose('add')
+def add(x,y):
+    return x+y
+
+@pgrpc.expose('inc2')
+def inc2(x):
+    return x+2
 
 rpcserver=pgrpc.PgRpc({
-    'dbu':md5sum('dddd'+'dbu'),
-    },funcmapping)
+    'dbu':pgrpc.md5sum('dddd'+'dbu'),
+    })
 
 if __name__=='__main__':
     pgrpc.start_console(rpcserver.cmdmapping,port=5440)
