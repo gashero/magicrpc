@@ -22,6 +22,10 @@ def add(x,y):
 def inc2(x):
     return x+2
 
+@pgrpc.expose('raiseerror')
+def raiseerror():
+    raise pgrpc.LogicError('error','sth wrong')
+
 rpcserver=pgrpc.PgRpc(pgrpc.makepass({'dbu':'dddd'}))
 
 if __name__=='__main__':
