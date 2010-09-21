@@ -24,6 +24,7 @@ def inc2(x):
 
 @pgrpc.expose('raiseerror')
 def raiseerror():
+    pgrpc.assert_pgerror(1==1,'er','err')
     raise pgrpc.LogicError('error','sth wrong')
 
 rpcserver=pgrpc.PgRpc(pgrpc.makepass({'dbu':'dddd'}))

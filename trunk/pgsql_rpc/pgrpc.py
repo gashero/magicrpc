@@ -82,6 +82,13 @@ def makepass(userpassdict):
         userpass_md5dict[username]=md5sum(password+username)
     return userpass_md5dict
 
+def assert_pgerror(expr,msg,detail=None):
+    """assert expr is true, else raise PGSimpleError with msg"""
+    if not expr:
+        if not detail:
+            detail=msg
+        raise PGSimpleError(msg,detail)
+
 class PgRpc(object):
 
     def __init__(self,userpass_md5dict,funcmapping={}):
