@@ -87,7 +87,7 @@ def assert_pgerror(expr,msg,detail=None):
     if not expr:
         if not detail:
             detail=msg
-        raise PGSimpleError(msg,detail)
+        raise pgpro.PGSimpleError(msg,detail)
 
 class PgRpc(object):
 
@@ -252,6 +252,16 @@ class TestPgRpc(unittest.TestCase):
             self.assertEqual(ex.message,'error\nDETAIL:  sth wrong\n')
         cur.close()
         conn.close()
+        return
+
+    def test_assert_pgerror(self):
+        self.assertEqual(assert_pgerror(1==1,'ok'),None)
+        try:
+            assert_pgerror(1==2,'1!=2','failed')
+            self.assertEqual('not run here','here')
+        except pgpro.PGSimpleError,ex:
+            self.assertEqual(ex.message,'1!=2')
+            self.assertEqual(ex.detail,'failed')
         return
 
 if __name__=='__main__':
