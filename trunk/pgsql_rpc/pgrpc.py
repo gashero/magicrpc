@@ -236,6 +236,10 @@ class TestPgRpc(unittest.TestCase):
         cur.execute('CALL inc2(7);')
         dataset=cur.fetchall()
         self.assertEqual(dataset[0],(repr(9),))
+        for i in range(10000):
+            cur.execute('CALL add(5,4);')
+            dataset=cur.fetchall()
+            self.assertEqual(dataset[0],(repr(9),))
         cur.close()
         conn.close()
         return
@@ -250,6 +254,12 @@ class TestPgRpc(unittest.TestCase):
             #print 'pgerror=',repr(ex.pgerror)
             #print 'message=',repr(ex.message)
             self.assertEqual(ex.message,'error\nDETAIL:  sth wrong\n')
+        cur.execute('CALL add(5,4);')
+        dataset=cur.fetchall()
+        self.assertEqual(dataset[0],(repr(9),))
+        cur.execute('CALL add("hello","world");')
+        dataset=cur.fetchall()
+        self.assertEqual(dataset[0],("'helloworld'",))
         cur.close()
         conn.close()
         return
