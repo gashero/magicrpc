@@ -252,7 +252,7 @@ def start_daemon(cmdmapping,port=5432,threadcount=10):
     app=service.Application('pgsql protocol')
     pgservice=PGService(cmdmapping,port)
     pgservice.setServiceParent(app)
-    reactor.suggestThreadPoolSize(threaccount)
+    reactor.suggestThreadPoolSize(threadcount)
     return app
 
 ## unittest ####################################################################
