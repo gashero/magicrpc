@@ -14,6 +14,8 @@ import md5
 import time
 import traceback
 
+import psycopg2
+
 import pgpro
 from pgpro import start_console,start_daemon
 from pgpro import PGSimpleError as LogicError
@@ -185,10 +187,43 @@ class PgRpc(object):
             print '%s: querystring=%s'%(repr(ex),repr(querystring))
             raise pgpro.PGSimpleError(repr(ex),repr(ex))
 
+MAX_USAGE=1000
+class PgRpcClient(object):
+    """An rpc client to call pgrpc"""
+
+    def __init__(self,params):
+        from DBUtils.PooledDB import PooledDB
+        self._dbpool=PooledDB(maxusage=MAX_USAGE,creator=psycopg2,**params)
+        return
+
+    def __getattr__(self,funcname):
+        if funcname.startswith('_'):
+            return object.__getitem__(self,funcname)
+        else:
+            return lambda *args,**kwargs:self.__call__(funcname,*args,**kwargs)
+
+    def __call__(self,funcname,*args,**kwargs):
+        params=map(lambda xx:repr(xx),args)
+        for (k,v) in kwargs.items():
+            params.append('%s=%s'%(k,repr(v)))
+        callstr='CALL %s(%s)'%(funcname,','.join(params))
+        conn=None
+        cur=None
+        try:
+            conn=self._dbpool.connection()
+            cur=conn.cursor()
+            cur.execute(callstr)
+            dataset=cur.fetchall()
+            return eval(dataset[0][0])
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+
 ## unittest ####################################################################
 
 import unittest
-import psycopg2
 import subprocess
 
 class TestPgRpc(unittest.TestCase):
@@ -236,10 +271,6 @@ class TestPgRpc(unittest.TestCase):
         cur.execute('CALL inc2(7);')
         dataset=cur.fetchall()
         self.assertEqual(dataset[0],(repr(9),))
-        for i in range(10000):
-            cur.execute('CALL add(5,4);')
-            dataset=cur.fetchall()
-            self.assertEqual(dataset[0],(repr(9),))
         cur.close()
         conn.close()
         return
@@ -254,12 +285,6 @@ class TestPgRpc(unittest.TestCase):
             #print 'pgerror=',repr(ex.pgerror)
             #print 'message=',repr(ex.message)
             self.assertEqual(ex.message,'error\nDETAIL:  sth wrong\n')
-        cur.execute('CALL add(5,4);')
-        dataset=cur.fetchall()
-        self.assertEqual(dataset[0],(repr(9),))
-        cur.execute('CALL add("hello","world");')
-        dataset=cur.fetchall()
-        self.assertEqual(dataset[0],("'helloworld'",))
         cur.close()
         conn.close()
         return
@@ -272,6 +297,17 @@ class TestPgRpc(unittest.TestCase):
         except pgpro.PGSimpleError,ex:
             self.assertEqual(ex.message,'1!=2')
             self.assertEqual(ex.detail,'failed')
+        return
+
+class TestPgRpcClient(unittest.TestCase):
+
+    def test_call(self):
+        pgc=PgRpcClient({'host':'localhost','port':5440,'user':'dbu','password':'dddd',})
+        #print pgc.add(2,y=3)
+        self.assertEqual(pgc.add(2,y=3),5)
+        self.assertEqual(pgc.add(x=2,y=9),11)
+        self.assertEqual(pgc.inc2(x=4),6)
+        self.assertEqual(pgc.inc2(4),6)
         return
 
 if __name__=='__main__':
