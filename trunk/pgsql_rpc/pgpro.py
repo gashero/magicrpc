@@ -72,6 +72,12 @@ class OriginPacket(Exception):
         self.packetlist=packetlist
         return
 
+class StatusPacket(Exception):
+
+    def __init__(self,command):
+        self.command=command
+        return
+
 class PGProtocol(protocol.Protocol):
     """PostgreSQL protocol"""
 
@@ -149,37 +155,8 @@ class PGProtocol(protocol.Protocol):
                 if mtype=='Q':
                     query=packet[:-1]
                     #print 'Query[%d]: %s,query=%s'%(len(packet),repr(packet),query.replace('\n',' '))
-                    try:
-                        #cmd,arg=query.strip().split(' ',1)
-                        #cmd=cmd.strip().lower()
-                        #arg=arg.strip()
-                        #func_all=self.cmdmapping['cmd_all']
-                        #func=self.cmdmapping.get('cmd_'+cmd,func_all)
-                        func=self.cmdmapping['query']
-                        colname,dataset=func(query)
-                        coldef,pktlist,complete=simple_dataset(colname,dataset)
-                        self.sendPacket('T',coldef)
-                        for pkt in pktlist:
-                            self.sendPacket('D',pkt)
-                        self.sendPacket('C',complete)
-                        self.sendPacket('Z','I')
-                    except PGSimpleError,ex:
-                        self.sendPacket('E',simple_error(ex.message,ex.detail))
-                        self.sendPacket('Z','I')
-                    except OriginPacket,ex:
-                        for pk in ex.packetlist:
-                            self.sendPacket(pk[0],pk[1])
-                    except Exception,ex:
-                        traceback.print_exc()
-                        self.sendPacket('E',simple_error('InternalError',repr(ex)))
-                        self.sendPacket('Z','I')
-                    #self.sendPacket('E',simple_error('fuck','fuck you!'))
-                    #coldef,pktlist,complete=simple_dataset('idx',['fuck1','fuck2','fuck3'])
-                    #self.sendPacket('T',coldef)
-                    #for pkt in pktlist:
-                    #    self.sendPacket('D',pkt)
-                    #self.sendPacket('C',complete)
-                    #self.sendPacket('Z','I')
+                    reactor.callInThread(self.process_query,query)
+                    #self.process_query(query)
                 elif mtype=='X':
                     assert packet==''
                     self.transport.loseConnection()
@@ -193,10 +170,38 @@ class PGProtocol(protocol.Protocol):
                 self.transport.loseConnection()
         return
 
-    def sendPacket(self,pkttype,pktbuf):
+    def sendPacket(self,pkttype,pktbuf,inthread=False):
         databuf=pkttype+struct.pack('!L',len(pktbuf)+4)+pktbuf
         #print 'Sent[%d]: %s'%(len(databuf),repr(databuf))
-        self.transport.write(databuf)
+        if not inthread:
+            self.transport.write(databuf)
+        else:
+            reactor.callFromThread(self.transport.write,databuf)
+        return
+
+    def process_query(self,query):
+        try:
+            func=self.cmdmapping['query']
+            colname,dataset=func(query)
+            coldef,pktlist,complete=simple_dataset(colname,dataset)
+            self.sendPacket('T',coldef,True)
+            for pkt in pktlist:
+                self.sendPacket('D',pkt,True)
+            self.sendPacket('C',complete,True)
+            self.sendPacket('Z','I',True)
+        except PGSimpleError,ex:
+            self.sendPacket('E',simple_error(ex.message,ex.detail),True)
+            self.sendPacket('Z','I',True)
+        except OriginPacket,ex:
+            for pk in ex.packetlist:
+                self.sendPacket(pk[0],pk[1],True)
+        except StatusPacket,ex:
+            self.sendPacket('C',ex.command+'\x00',True)
+            self.sendPacket('Z','I',True)
+        except Exception,ex:
+            traceback.print_exc()
+            self.sendPacket('E',simple_error('InternalError',repr(ex)),True)
+            self.sendPacket('Z','I',True)
         return
 
 def simple_dataset(colname,strlist):
@@ -211,9 +216,6 @@ def simple_dataset(colname,strlist):
                 )
     complete='SELECT\x00'
     return coldef,pktlist,complete
-
-def simple_status(key,value):
-    return '%s\x00%s\x00'%(key,value)
 
 def simple_error(message,detail=''):
     if detail:

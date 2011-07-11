@@ -17,8 +17,9 @@ import traceback
 import psycopg2
 
 import pgpro
-from pgpro import start_console,start_daemon
 from pgpro import PGSimpleError as LogicError
+
+RUNNING=False
 
 md5sum=lambda d:md5.md5(d).hexdigest()
 now=lambda :time.strftime('%Y-%m-%d %H:%M:%S')
@@ -64,18 +65,23 @@ CommonResponse={
         }
 
 exposed_funcmapping={}
-def expose(funcname,*args,**kwargs):
+def expose(funcname=None):
     """declare function that call by rpc"""
     global exposed_funcmapping
-    def inter1(func):
+    def inter1(func,funcname):
+        if funcname==None:
+            funcname=func.__name__
         if not exposed_funcmapping.has_key(funcname):
             exposed_funcmapping[funcname]=func
         else:
-            raise KeyError,'funcname declare more than once.'
+            if not RUNNING:
+                raise KeyError,'funcname declare more than once.'
+            else:
+                pass
         def inter2(*args,**kwargs):
             return func(*args,**kwargs)
         return inter2
-    return inter1
+    return lambda func:inter1(func,funcname)
 
 def makepass(userpassdict):
     """create userpass_md5dict from username and password dictionary."""
@@ -104,6 +110,7 @@ class PgRpc(object):
                 'cmd_select':self.cmd_select,
                 'cmd_show':self.cmd_show,
                 'cmd_set':self.cmd_set,
+                'cmd_reload':self.cmd_reload,
                 'cmd_call':self.cmd_call,
                 }
         self.funcmapping=funcmapping
@@ -142,9 +149,16 @@ class PgRpc(object):
     def cmd_set(self,querystring):
         raise pgpro.PGSimpleError('hello','fuck')
 
+    def cmd_reload(self,querystring):
+        try:
+            modname=querystring
+            mod=sys.modules[modname]
+            reload(mod)
+            raise pgpro.StatusPacket('reload')
+        except KeyError:
+            raise pgpro.PGSimpleError('ModuleNameError',repr(modname))
+
     def cmd_call(self,querystring):
-        if querystring.endswith(";"):
-            querystring=querystring[:-1]
         matchobj=RE_FUNCCALL_REPR.search(querystring)
         if matchobj:
             gdict=matchobj.groupdict()
@@ -173,6 +187,8 @@ class PgRpc(object):
             cmd,arg=querystring.strip().split(' ',1)
             cmd=cmd.strip().lower()
             arg=arg.strip()
+            if arg.endswith(';'):
+                arg=arg[:-1]
             func=self.cmdmapping.get('cmd_'+cmd)
             if func:
                 ret=func(arg)
@@ -181,6 +197,8 @@ class PgRpc(object):
                 print 'UnknownQuery: %s'%repr(querystring)
                 raise pgpro.PGSimpleError('UnknownQuery',repr(querystring))
         except pgpro.PGSimpleError,ex:
+            raise
+        except pgpro.StatusPacket,ex:
             raise
         except Exception,ex:
             #traceback.print_exc()
@@ -200,7 +218,9 @@ class PgRpcClient(object):
         if funcname.startswith('_'):
             return object.__getitem__(self,funcname)
         else:
-            return lambda *args,**kwargs:self.__call__(funcname,*args,**kwargs)
+            func=lambda *args,**kwargs:self.__call__(funcname,*args,**kwargs)
+            func.__name__='PgRpcClient.'+funcname
+            return func
 
     def __call__(self,funcname,*args,**kwargs):
         params=map(lambda xx:repr(xx),args)
@@ -220,6 +240,16 @@ class PgRpcClient(object):
                 cur.close()
             if conn:
                 conn.close()
+
+def start_console(*args,**kwargs):
+    global RUNNING
+    RUNNING=True
+    return pgpro.start_console(*args,**kwargs)
+
+def start_daemon(*args,**kwargs):
+    global RUNNING
+    RUNNING=True
+    return pgpro.start_daemon(*args,**kwargs)
 
 ## unittest ####################################################################
 
@@ -248,7 +278,6 @@ class TestPgRpc(unittest.TestCase):
         cur=conn.cursor()
         cur.execute('SELECT name FROM pgtest1')
         dataset=cur.fetchall()
-        #print dataset
         self.assertEqual(dataset,[("'hello1'",)])
         cur.close()
         conn.close()
@@ -259,11 +288,9 @@ class TestPgRpc(unittest.TestCase):
         cur=conn.cursor()
         cur.execute('CALL now()')
         dataset=cur.fetchall()
-        #print dataset
         self.assertEqual(dataset[0],(repr(now()),))
         cur.execute('CALL add(2,3)')
         dataset=cur.fetchall()
-        #print dataset
         self.assertEqual(dataset[0],(repr(5),))
         cur.execute('CALL add(5,4);')
         dataset=cur.fetchall()
