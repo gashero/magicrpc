@@ -13,9 +13,11 @@ import sys
 import md5
 import time
 import random
+import urllib
 import traceback
 
 import psycopg2
+import memcache
 
 import pgpro
 
@@ -228,11 +230,11 @@ CLEAR_PERCENT=100
 class PgRpcClient(object):
     """An rpc client to call pgrpc"""
 
-    def __init__(self,params,cachemap={}):
+    def __init__(self,params,cachemap={},mc=None):
         from DBUtils.PooledDB import PooledDB
         self._dbpool=PooledDB(maxusage=MAX_USAGE,creator=psycopg2,**params)
         self.cachemap=cachemap
-        self.cachepool={}
+        self.mc=mc
         return
 
     def __getattr__(self,funcname):
@@ -248,14 +250,12 @@ class PgRpcClient(object):
         for (k,v) in kwargs.items():
             params.append('%s=%s'%(k,repr(v)))
         callstr='CALL %s(%s)'%(funcname,','.join(params))
-        try:
-            retdict=self.cachepool[callstr]
-            if retdict['timeout']<time.time():
-                del self.cachepool[callstr]
-            else:
-                return retdict['return']
-        except KeyError,ex:
-            pass
+        cachekey='_pgcache_'+urllib.quote(callstr)
+        if self.mc:
+            retval=self.mc.get(cachekey)
+            #print 'cached:',repr(cachekey),repr(retval)
+            if retval:
+                return eval(retval)
         conn=None
         cur=None
         try:
@@ -265,12 +265,8 @@ class PgRpcClient(object):
             dataset=cur.fetchall()
             retval=eval(dataset[0][0])
             if self.cachemap.has_key(funcname):
-                self.cachepool[callstr]={
-                        'return':retval,
-                        'timeout':int(time.time())+self.cachemap[funcname]['timeout'],
-                        }
-                if random.choice(range(CLEAR_PERCENT))==1:
-                    self.clearcache()
+                self.mc.set(cachekey,repr(retval),
+                        self.cachemap[funcname]['timeout'])
             return retval
         finally:
             if cur:
@@ -278,31 +274,36 @@ class PgRpcClient(object):
             if conn:
                 conn.close()
 
-    def clearcache(self):
-        key_to_clear=[]
-        for (callstr,retdict) in self.cachepool.items():
-            if retdict['timeout']<time.time():
-                key_to_clear.append(callstr)
-        for callstr in key_to_clear:
-            del self.cachepool[callstr]
-        if key_to_clear:
-            print key_to_clear
-        key_to_clear=[]
-        if len(self.cachepool)>=MAX_CACHE_COUNT:
-            for callstr in random.sample(self.cachepool.keys(),REDUCE_CACHE_OVERFLOW):
-                key_to_clear.append(callstr)
-        if key_to_clear:
-            print key_to_clear
-        for callstr in key_to_clear:
-            del self.cachepool[callstr]
-        return
+    #def clearcache(self):
+    #    key_to_clear=[]
+    #    for (callstr,retdict) in self.cachepool.items():
+    #        if retdict['timeout']<time.time():
+    #            key_to_clear.append(callstr)
+    #    for callstr in key_to_clear:
+    #        del self.cachepool[callstr]
+    #    if key_to_clear:
+    #        print key_to_clear
+    #    key_to_clear=[]
+    #    if len(self.cachepool)>=MAX_CACHE_COUNT:
+    #        for callstr in random.sample(self.cachepool.keys(),REDUCE_CACHE_OVERFLOW):
+    #            key_to_clear.append(callstr)
+    #    if key_to_clear:
+    #        print key_to_clear
+    #    for callstr in key_to_clear:
+    #        del self.cachepool[callstr]
+    #    return
+
+    #def kill_cache(self,callstr):
+    #    try:
+    #        del self.cachepool[callstr]
+    #        return True
+    #    except KeyError,ex:
+    #        return False
 
     def kill_cache(self,callstr):
-        try:
-            del self.cachepool[callstr]
-            return True
-        except KeyError,ex:
-            return False
+        cachekey='_pgcache_'+'CALL%20'+urllib.quote(callstr)
+        #print 'kill mc ',repr(cachekey),self.mc.get(cachekey)
+        return self.mc.delete(cachekey)
 
 def start_console(*args,**kwargs):
     global RUNNING
@@ -399,12 +400,14 @@ class TestPgRpcClient(unittest.TestCase):
         pgc=PgRpcClient(
                 {'host':'localhost','port':5440,'user':'dbu','password':'dddd',},
                 {'now':{'timeout':3}},
+                memcache.Client(['localhost:11211']),
                 )
         #print pgc.add(2,y=3)
         self.assertEqual(pgc.add(2,y=3),5)
         self.assertEqual(pgc.add(x=2,y=9),11)
         self.assertEqual(pgc.inc2(x=4),6)
         self.assertEqual(pgc.inc2(4),6)
+        pgc.kill_cache('now()')
         nn=now()
         self.assertEqual(pgc.now(),nn)
         time.sleep(1)
