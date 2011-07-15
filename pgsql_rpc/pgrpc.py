@@ -17,7 +17,6 @@ import traceback
 import psycopg2
 
 import pgpro
-from pgpro import PGSimpleError as LogicError
 
 RUNNING=False
 
@@ -90,12 +89,25 @@ def makepass(userpassdict):
         userpass_md5dict[username]=md5sum(password+username)
     return userpass_md5dict
 
-def assert_pgerror(expr,msg,detail=None):
-    """assert expr is true, else raise PGSimpleError with msg"""
+def assert_pgerror(expr,msg,detail=''):
+    """assert expr is true, else raise LogicError with msg"""
     if not expr:
         if not detail:
             detail=msg
-        raise pgpro.PGSimpleError(msg,detail)
+        raise LogicError(msg,detail)
+
+class LogicError(Exception):
+
+    def __init__(self,errmsg,detail):
+        self.errmsg=errmsg
+        self.detail=detail
+        return
+
+    def __str__(self):
+        return 'LogicError(%s,%s)'%(repr(self.errmsg),repr(self.detail))
+
+    def __repr__(self):
+        return 'LogicError(%s,%s)'%(repr(self.errmsg),repr(self.detail))
 
 class PgRpc(object):
 
@@ -141,13 +153,13 @@ class PgRpc(object):
             #return ('name',['hello1','hello2','hello3'])
             return 'hello1'
         else:
-            raise pgpro.PGSimpleError('hello','fuck')
+            raise pgpro.PGSimpleError('hello',repr(querystring))
 
     def cmd_show(self,querystring):
-        raise pgpro.PGSimpleError('hello','fuck')
+        raise pgpro.PGSimpleError('hello',repr(querystring))
 
     def cmd_set(self,querystring):
-        raise pgpro.PGSimpleError('hello','fuck')
+        raise pgpro.PGSimpleError('hello',repr(querystring))
 
     def cmd_reload(self,querystring):
         try:
@@ -191,7 +203,10 @@ class PgRpc(object):
                 arg=arg[:-1]
             func=self.cmdmapping.get('cmd_'+cmd)
             if func:
-                ret=func(arg)
+                try:
+                    ret=func(arg)
+                except LogicError,ex:
+                    ret=ex
                 return ('result',[repr(ret),])
             else:
                 print 'UnknownQuery: %s'%repr(querystring)
