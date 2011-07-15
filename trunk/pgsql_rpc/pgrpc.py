@@ -12,6 +12,7 @@ import re
 import sys
 import md5
 import time
+import random
 import traceback
 
 import psycopg2
@@ -221,12 +222,17 @@ class PgRpc(object):
             raise pgpro.PGSimpleError(repr(ex),repr(ex))
 
 MAX_USAGE=1000
+MAX_CACHE_COUNT=5000
+REDUCE_CACHE_OVERFLOW=500
+CLEAR_PERCENT=100
 class PgRpcClient(object):
     """An rpc client to call pgrpc"""
 
-    def __init__(self,params):
+    def __init__(self,params,cachemap={}):
         from DBUtils.PooledDB import PooledDB
         self._dbpool=PooledDB(maxusage=MAX_USAGE,creator=psycopg2,**params)
+        self.cachemap=cachemap
+        self.cachepool={}
         return
 
     def __getattr__(self,funcname):
@@ -242,6 +248,14 @@ class PgRpcClient(object):
         for (k,v) in kwargs.items():
             params.append('%s=%s'%(k,repr(v)))
         callstr='CALL %s(%s)'%(funcname,','.join(params))
+        try:
+            retdict=self.cachepool[callstr]
+            if retdict['timeout']<time.time():
+                del self.cachepool[callstr]
+            else:
+                return retdict['return']
+        except KeyError,ex:
+            pass
         conn=None
         cur=None
         try:
@@ -249,12 +263,46 @@ class PgRpcClient(object):
             cur=conn.cursor()
             cur.execute(callstr)
             dataset=cur.fetchall()
-            return eval(dataset[0][0])
+            retval=eval(dataset[0][0])
+            if self.cachemap.has_key(funcname):
+                self.cachepool[callstr]={
+                        'return':retval,
+                        'timeout':int(time.time())+self.cachemap[funcname]['timeout'],
+                        }
+                if random.choice(range(CLEAR_PERCENT))==1:
+                    self.clearcache()
+            return retval
         finally:
             if cur:
                 cur.close()
             if conn:
                 conn.close()
+
+    def clearcache(self):
+        key_to_clear=[]
+        for (callstr,retdict) in self.cachepool.items():
+            if retdict['timeout']<time.time():
+                key_to_clear.append(callstr)
+        for callstr in key_to_clear:
+            del self.cachepool[callstr]
+        if key_to_clear:
+            print key_to_clear
+        key_to_clear=[]
+        if len(self.cachepool)>=MAX_CACHE_COUNT:
+            for callstr in random.sample(self.cachepool.keys(),REDUCE_CACHE_OVERFLOW):
+                key_to_clear.append(callstr)
+        if key_to_clear:
+            print key_to_clear
+        for callstr in key_to_clear:
+            del self.cachepool[callstr]
+        return
+
+    def kill_cache(self,callstr):
+        try:
+            del self.cachepool[callstr]
+            return True
+        except KeyError,ex:
+            return False
 
 def start_console(*args,**kwargs):
     global RUNNING
@@ -336,20 +384,35 @@ class TestPgRpc(unittest.TestCase):
         try:
             assert_pgerror(1==2,'1!=2','failed')
             self.assertEqual('not run here','here')
-        except pgpro.PGSimpleError,ex:
-            self.assertEqual(ex.message,'1!=2')
+        except LogicError,ex:
+            self.assertEqual(ex.errmsg,'1!=2')
             self.assertEqual(ex.detail,'failed')
         return
 
 class TestPgRpcClient(unittest.TestCase):
 
     def test_call(self):
-        pgc=PgRpcClient({'host':'localhost','port':5440,'user':'dbu','password':'dddd',})
+        global MAX_CACHE_COUNT
+        global CLEAR_PERCENT
+        MAX_CACHE_COUNT=10
+        CLEAR_PERCENT=3
+        pgc=PgRpcClient(
+                {'host':'localhost','port':5440,'user':'dbu','password':'dddd',},
+                {'now':{'timeout':3}},
+                )
         #print pgc.add(2,y=3)
         self.assertEqual(pgc.add(2,y=3),5)
         self.assertEqual(pgc.add(x=2,y=9),11)
         self.assertEqual(pgc.inc2(x=4),6)
         self.assertEqual(pgc.inc2(4),6)
+        nn=now()
+        self.assertEqual(pgc.now(),nn)
+        time.sleep(1)
+        self.assertEqual(pgc.now(),nn)
+        time.sleep(1)
+        self.assertEqual(pgc.now(),nn)
+        time.sleep(1)
+        self.assertEqual(pgc.now(),now())
         return
 
 if __name__=='__main__':
