@@ -27,7 +27,9 @@ def raiseerror():
     pgrpc.assert_pgerror(1==1,'er','err')
     raise pgrpc.LogicError('error','sth wrong')
 
-rpcserver=pgrpc.PgRpc(pgrpc.makepass({'dbu':'dddd'}))
+rpcserver=pgrpc.PgRpc(
+        pgrpc.makepass({'dbu':'dddd'}),
+        )
 
 if __name__=='__main__':
     pgrpc.start_console(rpcserver.cmdmapping,port=5440)
