@@ -104,6 +104,7 @@ class LogicError(Exception):
     def __init__(self,errmsg,detail):
         self.errmsg=errmsg
         self.detail=detail
+        self.args=(errmsg,detail)
         return
 
     def __str__(self):
@@ -255,7 +256,11 @@ class PgRpcClient(object):
             retval=self.mc.get(cachekey)
             #print 'cached:',repr(cachekey),repr(retval)
             if retval:
-                return eval(retval)
+                retval=eval(retval)
+                if isinstance(retval,LogicError):
+                    raise retval
+                else:
+                    return retval
         conn=None
         cur=None
         try:
@@ -267,7 +272,10 @@ class PgRpcClient(object):
             if self.cachemap.has_key(funcname):
                 self.mc.set(cachekey,repr(retval),
                         self.cachemap[funcname]['timeout'])
-            return retval
+            if isinstance(retval,LogicError):
+                raise retval
+            else:
+                return retval
         finally:
             if cur:
                 cur.close()
