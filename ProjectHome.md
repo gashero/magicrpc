@@ -1,0 +1,1 @@
+Many type of magic rpc.
