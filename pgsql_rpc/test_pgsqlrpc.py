@@ -28,7 +28,7 @@ def raiseerror():
     raise pgrpc.LogicError('error','sth wrong')
 
 rpcserver=pgrpc.PgRpc(
-        pgrpc.makepass({'dbu':'dddd'}),
+        pgrpc.makepass({b'dbu':b'dddd'}),
         )
 
 if __name__=='__main__':
@@ -36,4 +36,4 @@ if __name__=='__main__':
 elif __name__=='__builtin__':
     pgrpc.start_daemon(rpcserver.cmdmapping,port=5440)
 else:
-    raise ValueError,'Unknown start style.'
+    raise ValueError('Unknown start style.')

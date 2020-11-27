@@ -10,20 +10,17 @@ A rpc wrapper to call and return
 import os
 import re
 import sys
-import md5
+import hashlib
 import time
 import random
 import urllib
 import traceback
 
-import psycopg2
-import memcache
-
 import pgpro
 
 RUNNING=False
 
-md5sum=lambda d:md5.md5(d).hexdigest()
+md5sum=lambda d:hashlib.md5(d).hexdigest().encode('utf-8')
 now=lambda :time.strftime('%Y-%m-%d %H:%M:%S')
 RE_FUNCCALL_REPR=re.compile(r'''^(?P<funcname>\w+)\((?P<args>.*?)\)$''')
 
@@ -73,11 +70,11 @@ def expose(funcname=None):
     def inter1(func,funcname):
         if funcname==None:
             funcname=func.__name__
-        if not exposed_funcmapping.has_key(funcname):
+        if not funcname in exposed_funcmapping:
             exposed_funcmapping[funcname]=func
         else:
             if not RUNNING:
-                raise KeyError,'funcname declare more than once.'
+                raise KeyError('funcname declare more than once.')
             else:
                 pass
         def inter2(*args,**kwargs):
@@ -89,6 +86,8 @@ def makepass(userpassdict):
     """create userpass_md5dict from username and password dictionary."""
     userpass_md5dict={}
     for (username,password) in userpassdict.items():
+        assert type(username)==bytes
+        assert type(password)==bytes
         userpass_md5dict[username]=md5sum(password+username)
     return userpass_md5dict
 
@@ -134,7 +133,7 @@ class PgRpc(object):
         return
 
     def startup(self,protocol_version,infodict):
-        #print 'Startup: %s %s'%(repr(protocol_version),repr(infodict))
+        #print('Startup: %s %s'%(repr(protocol_version),repr(infodict)))
         return
 
     def authmd5(self,username,saltstr,md5pass):
@@ -146,7 +145,7 @@ class PgRpc(object):
                 return False
         except KeyError:
             return False
-        except Exception,ex:
+        except Exception as ex:
             traceback.print_exc()
             #print str(ex)
             return False
@@ -199,6 +198,8 @@ class PgRpc(object):
             raise pgpro.OriginPacket(cresp)
         except KeyError:
             pass
+        if querystring.count(' ')==0:
+            raise pgpro.PGSimpleError('ValueError','Query must be cmd+" "+parameters')
         try:
             cmd,arg=querystring.strip().split(' ',1)
             cmd=cmd.strip().lower()
@@ -209,19 +210,19 @@ class PgRpc(object):
             if func:
                 try:
                     ret=func(arg)
-                except LogicError,ex:
+                except LogicError as ex:
                     ret=ex
                 return ('result',[repr(ret),])
             else:
-                print 'UnknownQuery: %s'%repr(querystring)
+                print('UnknownQuery: %s'%repr(querystring))
                 raise pgpro.PGSimpleError('UnknownQuery',repr(querystring))
-        except pgpro.PGSimpleError,ex:
+        except pgpro.PGSimpleError as ex:
             raise
-        except pgpro.StatusPacket,ex:
+        except pgpro.StatusPacket as ex:
             raise
-        except Exception,ex:
-            #traceback.print_exc()
-            print '%s: querystring=%s'%(repr(ex),repr(querystring))
+        except Exception as ex:
+            traceback.print_exc()
+            print('%s: querystring=%s'%(repr(ex),repr(querystring)))
             raise pgpro.PGSimpleError(repr(ex),repr(ex))
 
 MAX_USAGE=1000
@@ -232,6 +233,7 @@ class PgRpcClient(object):
     """An rpc client to call pgrpc"""
 
     def __init__(self,params,cachemap={},mc=None):
+        import psycopg2
         from DBUtils.PooledDB import PooledDB
         self._dbpool=PooledDB(maxusage=MAX_USAGE,creator=psycopg2,**params)
         self.cachemap=cachemap
@@ -331,6 +333,7 @@ import subprocess
 class TestPgRpc(unittest.TestCase):
 
     def setUp(self):
+        import psycopg2
         return
 
     def tearDown(self):
@@ -379,7 +382,7 @@ class TestPgRpc(unittest.TestCase):
         cur=conn.cursor()
         try:
             cur.execute('CALL raiseerror()')
-        except psycopg2.InternalError,ex:
+        except psycopg2.InternalError as ex:
             #print 'pgcode=',ex.pgcode
             #print 'pgerror=',repr(ex.pgerror)
             #print 'message=',repr(ex.message)
@@ -393,7 +396,7 @@ class TestPgRpc(unittest.TestCase):
         try:
             assert_pgerror(1==2,'1!=2','failed')
             self.assertEqual('not run here','here')
-        except LogicError,ex:
+        except LogicError as ex:
             self.assertEqual(ex.errmsg,'1!=2')
             self.assertEqual(ex.detail,'failed')
         return
@@ -401,6 +404,7 @@ class TestPgRpc(unittest.TestCase):
 class TestPgRpcClient(unittest.TestCase):
 
     def test_call(self):
+        import memcache
         global MAX_CACHE_COUNT
         global CLEAR_PERCENT
         MAX_CACHE_COUNT=10

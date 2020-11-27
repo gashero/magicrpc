@@ -10,8 +10,6 @@ PostgreSQL server protocol implementation.
 import re
 import os
 import sys
-import sha
-import md5
 import random
 import struct
 import traceback
@@ -31,7 +29,7 @@ ProSts_Query=50
 ProSts_Startup=10
 
 INT32=lambda i:struct.pack('!l',i)
-salt=lambda length:''.join([chr(random.choice(range(33,120))) for x in range(length)])
+salt=lambda length:''.join([chr(random.choice(range(33,120))) for x in range(length)]).encode('utf-8')
 
 def extract_packet(_buffer):
     """extract PostgreSQL protocol packet"""
@@ -81,17 +79,17 @@ class StatusPacket(Exception):
 class PGProtocol(protocol.Protocol):
     """PostgreSQL protocol"""
 
-    _buffer='\x00'
+    _buffer=b'\x00'
     _authed=False
     _status=ProSts_AskSSL
 
     def connectionMade(self):
-        #print 'ConnectionMade()'
+        print 'ConnectionMade()'
         self.saltstr=salt(4)
         return
 
     def connectionLost(self,reason):
-        #print 'ConnectionLost()'
+        print('ConnectionLost()',reason)
         return
 
     def dataReceived(self,chunk):
@@ -102,43 +100,43 @@ class PGProtocol(protocol.Protocol):
             if packet==None:
                 break
             if self._status==ProSts_AskSSL:
-                if packet=='\x04\xd2\x16\x2f':
+                if packet==b'\x04\xd2\x16\x2f':
                     self._status=ProSts_Startup
-                    self.transport.write('N')
-                    self._buffer+='\x00'
-                elif packet.startswith('\x00\x03\x00\x00'):
+                    self.transport.write(b'N')
+                    self._buffer+=b'\x00'
+                elif packet.startswith(b'\x00\x03\x00\x00'):
                     protocol_version=packet[:4]
-                    pairlist=packet[4:].split('\x00')[:-2]
+                    pairlist=packet[4:].split(b'\x00')[:-2]
                     infodict={}
                     for idx in range(len(pairlist)/2):
                         infodict[pairlist[idx*2]]=pairlist[idx*2+1]
-                    self.username=infodict['user']
+                    self.username=infodict[b'user']
                     self.cmdmapping['startup'](protocol_version,infodict)
                     self._status=ProSts_AuthMD5
                     self.sendPacket('R',INT32(5)+self.saltstr)
                 else:
-                    print 'AskSSL_ERROR: mtype=%s packet=%s'%(
-                            repr(mtype),repr(packet))
+                    print('AskSSL_ERROR: mtype=%s packet=%s'%(
+                            repr(mtype),repr(packet)))
                     self.transport.loseConnection()
             elif self._status==ProSts_Startup:
-                if packet.startswith('\x00\x03\x00\x00'):
+                if packet.startswith(b'\x00\x03\x00\x00'):
                     protocol_version=packet[:4]
-                    pairlist=packet[4:].split('\x00')[:-2]
+                    pairlist=packet[4:].split(b'\x00')[:-2]
                     infodict={}
-                    for idx in range(len(pairlist)/2):
+                    for idx in range(int(len(pairlist)/2)):
                         infodict[pairlist[idx*2]]=pairlist[idx*2+1]
-                    self.username=infodict['user']
+                    self.username=infodict[b'user']
                     self.cmdmapping['startup'](protocol_version,infodict)
                     self._status=ProSts_AuthMD5
                     self.sendPacket('R',INT32(5)+self.saltstr)
                 else:
-                    print 'Startup_ERROR: mtype=%s packet=%s'%(
-                            repr(mtype),repr(packet))
+                    print('Startup_ERROR: mtype=%s packet=%s'%(
+                            repr(mtype),repr(packet)))
                     self.transport.loseConnection()
             elif self._status==ProSts_AuthMD5:
                 if not mtype=='p':
-                    print 'AuthMD5: mtype=%s packet=%s'%(
-                            repr(mtype),repr(packet))
+                    print('AuthMD5: mtype=%s packet=%s'%(
+                            repr(mtype),repr(packet)))
                     self.transport.loseConnection()
                 if self.cmdmapping['authmd5'](self.username,self.saltstr,
                         packet[3:-1]):
@@ -146,10 +144,14 @@ class PGProtocol(protocol.Protocol):
                     self.sendPacket('R',INT32(0))
                     for (k,v) in self.cmdmapping['deslist']:
                         self.sendPacket('S','%s\x00%s\x00'%(k,v))
-                    self.sendPacket('K','\x00\x00&\xefY3>\xc1') #TODO: backendkeydata
-                    self.sendPacket('Z','I')
+                    self.sendPacket('K',b'\x00\x00&\xefY3>\xc1') #TODO: backendkeydata
+                    self.sendPacket('Z',b'I')
                 else:
-                    self.sendPacket('E','S\xe8\x87\xb4\xe5\x91\xbd\xe9\x94\x99\xe8\xaf\xaf\x00C28000\x00M\xe7\x94\xa8\xe6\x88\xb7 "dbu" Password \xe8\xae\xa4\xe8\xaf\x81\xe5\xa4\xb1\xe8\xb4\xa5\x00Fauth.c\x00L1017\x00Rauth_failed\x00\x00')
+                    self.sendPacket('E',b'S\xe8\x87\xb4\xe5\x91\xbd\xe9\x94\x99'+\
+                            b'\xe8\xaf\xaf\x00C28000\x00M\xe7\x94\xa8\xe6\x88'+\
+                            b'\xb7 "dbu" Password \xe8\xae\xa4\xe8\xaf\x81\xe5'+\
+                            b'\xa4\xb1\xe8\xb4\xa5\x00Fauth.c\x00L1017\x00'+\
+                            b'Rauth_failed\x00\x00')
                     self.transport.loseConnection()
             elif self._status==ProSts_Query:
                 if mtype=='Q':
@@ -161,17 +163,22 @@ class PGProtocol(protocol.Protocol):
                     assert packet==''
                     self.transport.loseConnection()
                 else:
-                    print 'UnknownQuery[%d]: mtype=%s, packet=%s'%repr(
-                            len(packet),repr(mtype),repr(packet))
+                    print('UnknownQuery[%d]: mtype=%s, packet=%s'%repr(
+                            len(packet),repr(mtype),repr(packet)))
                     self.transport.loseConnection()
             else:
-                print 'UnknownPacket: mtype=%s,packet=%s'%(
-                        repr(mtype),repr(packet))
+                print('UnknownPacket: mtype=%s,packet=%s'%(
+                        repr(mtype),repr(packet)))
                 self.transport.loseConnection()
         return
 
     def sendPacket(self,pkttype,pktbuf,inthread=False):
-        databuf=pkttype+struct.pack('!L',len(pktbuf)+4)+pktbuf
+        if sys.version_info.major==3:
+            if type(pkttype)==str:
+                pkttype=pkttype.encode('utf-8')
+            if type(pktbuf)==str:
+                pktbuf=pktbuf.encode('utf-8')
+        databuf=pkttype+struct.pack(b'!L',len(pktbuf)+4)+pktbuf
         #print 'Sent[%d]: %s'%(len(databuf),repr(databuf))
         if not inthread:
             self.transport.write(databuf)
@@ -188,20 +195,20 @@ class PGProtocol(protocol.Protocol):
             for pkt in pktlist:
                 self.sendPacket('D',pkt,True)
             self.sendPacket('C',complete,True)
-            self.sendPacket('Z','I',True)
-        except PGSimpleError,ex:
+            self.sendPacket('Z',b'I',True)
+        except PGSimpleError as ex:
             self.sendPacket('E',simple_error(ex.message,ex.detail),True)
-            self.sendPacket('Z','I',True)
-        except OriginPacket,ex:
+            self.sendPacket('Z',b'I',True)
+        except OriginPacket as ex:
             for pk in ex.packetlist:
                 self.sendPacket(pk[0],pk[1],True)
-        except StatusPacket,ex:
+        except StatusPacket as ex:
             self.sendPacket('C',ex.command+'\x00',True)
-            self.sendPacket('Z','I',True)
-        except Exception,ex:
+            self.sendPacket('Z',b'I',True)
+        except Exception as ex:
             traceback.print_exc()
             self.sendPacket('E',simple_error('InternalError',repr(ex)),True)
-            self.sendPacket('Z','I',True)
+            self.sendPacket('Z',b'I',True)
         return
 
 def simple_dataset(colname,strlist):
@@ -260,12 +267,12 @@ def start_daemon(cmdmapping,port=5432,threadcount=10):
 ## unittest ####################################################################
 
 import unittest
-import psycopg2
 import subprocess
 
 class TestProtocol(unittest.TestCase):
 
     def setUp(self):
+        import psycopg2
         return
 
     def tearDown(self):
@@ -277,7 +284,7 @@ class TestProtocol(unittest.TestCase):
         pipe=subprocess.Popen(cmd,shell=True,stdout=subprocess.PIPE).stdout
         output=pipe.read()
         pipe.close()
-        #self.assertEqual(output.strip().startswith('is_superuser'),True)
+        #self.assertEqual(output.strip().startswith(b'is_superuser'),True)
         return
 
 if __name__=='__main__':
