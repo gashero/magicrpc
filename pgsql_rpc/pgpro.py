@@ -84,7 +84,7 @@ class PGProtocol(protocol.Protocol):
     _status=ProSts_AskSSL
 
     def connectionMade(self):
-        print 'ConnectionMade()'
+        print('ConnectionMade()')
         self.saltstr=salt(4)
         return
 
